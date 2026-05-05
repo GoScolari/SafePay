@@ -1,0 +1,27 @@
+# Dependencias
+node_modules/
+dist/
+build/
+
+# Variables de entorno y secretos
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Claude Code - solo configuración personal local
+.claude/settings.local.json
+.claude/sessions/
+.claude/.cache/
