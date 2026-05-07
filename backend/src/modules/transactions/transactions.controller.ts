@@ -48,4 +48,9 @@ export class TransactionsController {
   cancel(@Param('id') id: string, @CurrentUser() user: { id: string }) {
     return this.transactionsService.cancel(id, user.id);
   }
+
+  @Get('public/:slug')
+  findBySlug(@Param('slug') slug: string) {
+    return this.transactionsService.findBySlug(slug);
+  }
 }

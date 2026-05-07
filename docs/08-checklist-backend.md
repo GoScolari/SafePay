@@ -90,7 +90,7 @@
 - [x] Integración Chilexpress API — polling cada 2h para envíos `IN_TRANSIT`
 - [x] Integración BlueExpress API — webhook + polling de respaldo
 - [x] Transición automática `EN_TRÁNSITO → ENTREGADO` al confirmar entrega (setea `autoReleaseAt +48h`)
-- [x] Notificación `TX_SHIPPING_ALERT` en fallo de entrega — TODO pendiente (NotificationsModule)
+- [x] Notificación `TX_SHIPPING_ALERT` en fallo de entrega + `TX_DELIVERED` al comprador al confirmar entrega
 - [x] Cron job: polling automático de envíos activos cada 2h
 
 ---
@@ -102,7 +102,7 @@
 - [x] `POST /disputes/:id/resolve` — solo admin (`RolesGuard`), emitir fallo, ejecutar pago/reembolso MP
 - [x] Transición `ENTREGADO → EN_DISPUTA` al abrir disputa
 - [x] Cron job (`*/30 * * * *`): escalar disputa sin respuesta del vendedor tras 48h → fallo automático comprador
-- [x] Notificaciones automáticas — TODO pendiente (NotificationsModule)
+- [x] Notificaciones automáticas — `TX_DISPUTED` al abrir/responder, `TX_COMPLETED` al resolver (admin y auto-escalación)
 - [x] DTOs con validación (`OpenDisputeDto`, `RespondDisputeDto`, `ResolveDisputeDto`)
 
 ---
