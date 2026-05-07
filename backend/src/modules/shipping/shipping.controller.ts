@@ -1,7 +1,21 @@
-import { Controller, Post, Get, Param, Body, UseGuards, Headers, Req } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Param,
+  Body,
+  UseGuards,
+  Headers,
+  Req,
+  HttpCode,
+  HttpStatus,
+  RawBodyRequest,
+} from '@nestjs/common';
 import { Request } from 'express';
 import { ShippingService } from './shipping.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { RegisterTrackingDto } from './dto/register-tracking.dto';
 
 @Controller('shipping')
 export class ShippingController {
@@ -9,18 +23,29 @@ export class ShippingController {
 
   @Post('track')
   @UseGuards(JwtAuthGuard)
-  track(@Body() body: any) {
-    return this.shippingService.registerTracking(body);
+  track(
+    @Body() dto: RegisterTrackingDto,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.shippingService.registerTracking(dto, user.id);
   }
 
   @Get(':txId/status')
   @UseGuards(JwtAuthGuard)
-  status(@Param('txId') txId: string) {
-    return this.shippingService.getStatus(txId);
+  status(
+    @Param('txId') txId: string,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.shippingService.getStatus(txId, user.id);
   }
 
+  // Sin JwtAuthGuard — validado internamente con HMAC-SHA256
   @Post('webhook')
-  webhook(@Req() req: Request, @Headers('x-signature') signature: string) {
-    return this.shippingService.handleWebhook(req.body, signature);
+  @HttpCode(HttpStatus.OK)
+  webhook(
+    @Req() req: RawBodyRequest<Request>,
+    @Headers('x-signature') signature: string,
+  ) {
+    return this.shippingService.handleWebhook(req.rawBody, signature);
   }
 }

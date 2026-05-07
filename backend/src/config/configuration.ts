@@ -42,4 +42,15 @@ export default () => ({
   firebase: {
     key: process.env.FIREBASE_KEY ?? '',
   },
+
+  chilexpress: {
+    apiKey: process.env.CHILEXPRESS_API_KEY ?? '',
+    baseUrl: process.env.CHILEXPRESS_BASE_URL ?? 'https://testservices.chilexpress.cl/v1',
+  },
+
+  bluexpress: {
+    token: process.env.BLUEXPRESS_TOKEN ?? '',
+    webhookSecret: process.env.BLUEXPRESS_WEBHOOK_SECRET ?? '',
+    baseUrl: process.env.BLUEXPRESS_BASE_URL ?? 'https://www.blue.cl/api/v1',
+  },
 });
