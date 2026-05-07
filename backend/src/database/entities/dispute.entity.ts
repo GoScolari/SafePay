@@ -36,6 +36,9 @@ export class Dispute {
   @Column({ type: 'enum', enum: DisputeResolution, nullable: true })
   resolution: DisputeResolution;
 
+  @Column({ name: 'vendor_response', type: 'text', nullable: true })
+  vendorResponse: string | null;
+
   @Column({ name: 'resolution_note', type: 'text', nullable: true })
   resolutionNote: string;
 

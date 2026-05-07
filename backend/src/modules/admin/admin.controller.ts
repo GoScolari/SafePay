@@ -1,9 +1,34 @@
-import { Controller, Get, Post, Param, Body, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Param,
+  Body,
+  Query,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { UserRole } from '../../common/enums';
+import { DisputeResolution, UserRole } from '../../common/enums';
+import { IsEnum, IsString, MinLength } from 'class-validator';
+
+class ResolveDisputeAdminDto {
+  @IsEnum(DisputeResolution)
+  resolution: DisputeResolution;
+
+  @IsString()
+  @MinLength(10)
+  resolutionNote: string;
+}
+
+class ForceStatusDto {
+  @IsString()
+  status: string;
+}
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -11,7 +36,8 @@ import { UserRole } from '../../common/enums';
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
-  // Disputas
+  // ── Disputas ───────────────────────────────────────────────────────────────
+
   @Get('disputes')
   getDisputes() {
     return this.adminService.getDisputes();
@@ -23,14 +49,16 @@ export class AdminController {
   }
 
   @Post('disputes/:id/resolve')
-  resolveDispute(@Param('id') id: string, @Body() body: any) {
-    return this.adminService.resolveDispute(id, body);
+  @HttpCode(HttpStatus.OK)
+  resolveDispute(@Param('id') id: string, @Body() dto: ResolveDisputeAdminDto) {
+    return this.adminService.resolveDispute(id, dto);
   }
 
-  // Transacciones
+  // ── Transacciones ──────────────────────────────────────────────────────────
+
   @Get('transactions')
-  getTransactions() {
-    return this.adminService.getTransactions();
+  getTransactions(@Query('status') status?: string) {
+    return this.adminService.getTransactions(status);
   }
 
   @Get('transactions/:id')
@@ -39,11 +67,13 @@ export class AdminController {
   }
 
   @Post('transactions/:id/force-status')
-  forceStatus(@Param('id') id: string, @Body() body: any) {
-    return this.adminService.forceStatus(id, body.status);
+  @HttpCode(HttpStatus.OK)
+  forceStatus(@Param('id') id: string, @Body() dto: ForceStatusDto) {
+    return this.adminService.forceStatus(id, dto.status);
   }
 
-  // Usuarios
+  // ── Usuarios ───────────────────────────────────────────────────────────────
+
   @Get('users')
   getUsers() {
     return this.adminService.getUsers();
@@ -55,6 +85,7 @@ export class AdminController {
   }
 
   @Post('users/:id/ban')
+  @HttpCode(HttpStatus.OK)
   banUser(@Param('id') id: string) {
     return this.adminService.banUser(id);
   }
