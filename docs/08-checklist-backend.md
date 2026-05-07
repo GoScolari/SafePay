@@ -112,7 +112,7 @@
 - [x] `GET /notifications/my` — listar notificaciones del usuario (últimas 50)
 - [x] `PATCH /notifications/:id/read` — marcar como leída
 - [x] Servicio interno `notify()` — guardar en DB + enviar push FCM (graceful sin credenciales)
-- [ ] Disparar `notify()` en cada módulo — pendiente conectar los TODO comments en Shipping/Disputes/Payments
+- [x] Disparar `notify()` en cada módulo — conectado en Payments (TX_PAID), Shipping (TX_DELIVERED, TX_SHIPPING_ALERT), Disputes (TX_DISPUTED, TX_COMPLETED)
 - [ ] Disparar SMS vía Twilio en eventos críticos — pendiente (fuera de scope MVP)
 
 ---
@@ -146,9 +146,9 @@
 ---
 
 ## Antes de ir a producción
-- [ ] Cambiar `synchronize: false` en TypeORM y generar migraciones
+- [x] `synchronize: false` en producción (`NODE_ENV !== 'development'`) — `data-source.ts` creado, scripts `migration:generate/run/revert` en package.json
 - [ ] Variables de entorno cargadas desde AWS Secrets Manager
-- [ ] CORS restringido a dominios `safepay.cl`
+- [x] CORS restringido a dominios `safepay.cl` en producción, `localhost` en desarrollo
 - [ ] Webhook URL registrado en panel Mercado Pago
 - [ ] Cuenta marketplace MP aprobada con Split Payments activo
 - [ ] Checklist completo de `07-guia-despliegue.md §06`

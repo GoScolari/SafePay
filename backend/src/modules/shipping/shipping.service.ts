@@ -16,7 +16,8 @@ import { firstValueFrom } from 'rxjs';
 import * as crypto from 'crypto';
 import { Shipment } from '../../database/entities/shipment.entity';
 import { Transaction } from '../../database/entities/transaction.entity';
-import { CourierType, ShipmentStatus, TxRole, TxStatus } from '../../common/enums';
+import { CourierType, NotificationType, ShipmentStatus, TxRole, TxStatus } from '../../common/enums';
+import { NotificationsService } from '../notifications/notifications.service';
 import { RegisterTrackingDto } from './dto/register-tracking.dto';
 
 interface CourierTrackResult {
@@ -44,6 +45,7 @@ export class ShippingService {
     private readonly txRepo: Repository<Transaction>,
     private readonly http: HttpService,
     private readonly config: ConfigService,
+    private readonly notificationsService: NotificationsService,
   ) {
     this.chxApiKey  = this.config.get<string>('chilexpress.apiKey')  ?? '';
     this.chxBaseUrl = this.config.get<string>('chilexpress.baseUrl') ?? 'https://testservices.chilexpress.cl/v1';
@@ -235,12 +237,29 @@ export class ShippingService {
       tx.status        = TxStatus.ENTREGADO;
       tx.autoReleaseAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
       await this.txRepo.save(tx);
-      // TODO: notify TX_DELIVERED al comprador
+      const buyerId = tx.initiatorRole === TxRole.SELLER ? tx.counterpartId : tx.initiatorId;
+      if (buyerId) {
+        void this.notificationsService.notify({
+          userId: buyerId,
+          type: NotificationType.TX_DELIVERED,
+          title: 'Entrega confirmada',
+          body: `Tu pedido "${tx.description}" fue entregado. Tienes 48h para confirmar.`,
+          transactionId: tx.id,
+        });
+      }
 
     } else if (mappedStatus === ShipmentStatus.FAILED && shipment.status !== ShipmentStatus.FAILED) {
       shipment.status = ShipmentStatus.FAILED;
       // tx permanece EN_TRANSITO — no cambiar tx.status
-      // TODO: notify TX_SHIPPING_ALERT a ambas partes
+      for (const userId of [tx.initiatorId, tx.counterpartId].filter(Boolean)) {
+        void this.notificationsService.notify({
+          userId: userId as string,
+          type: NotificationType.TX_SHIPPING_ALERT,
+          title: 'Alerta de envío',
+          body: `Hubo un problema con el envío de "${tx.description}".`,
+          transactionId: tx.id,
+        });
+      }
 
     } else if (mappedStatus === ShipmentStatus.IN_TRANSIT && shipment.status === ShipmentStatus.PENDING) {
       shipment.status = ShipmentStatus.IN_TRANSIT;

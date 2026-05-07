@@ -14,8 +14,9 @@ import { firstValueFrom } from 'rxjs';
 import * as crypto from 'crypto';
 import { Payment } from '../../database/entities/payment.entity';
 import { Transaction } from '../../database/entities/transaction.entity';
-import { FeePayer, PaymentStatus, TxRole, TxStatus } from '../../common/enums';
+import { FeePayer, NotificationType, PaymentStatus, TxRole, TxStatus } from '../../common/enums';
 import { UsersService } from '../users/users.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { InitiatePaymentDto } from './dto/initiate-payment.dto';
 
 @Injectable()
@@ -34,6 +35,7 @@ export class PaymentsService {
     private readonly http: HttpService,
     private readonly config: ConfigService,
     private readonly usersService: UsersService,
+    private readonly notificationsService: NotificationsService,
   ) {
     this.mpAccessToken = this.config.get<string>('mercadoPago.appId') ?? '';
     this.mpWebhookSecret = this.config.get<string>('mercadoPago.webhookSecret') ?? '';
@@ -288,6 +290,13 @@ export class PaymentsService {
         await this.paymentRepo.save(payment);
         payment.transaction.status = TxStatus.PAGADO;
         await this.txRepo.save(payment.transaction);
+        void this.notificationsService.notify({
+          userId: payment.transaction.initiatorId,
+          type: NotificationType.TX_PAID,
+          title: 'Pago recibido',
+          body: `El pago por "${payment.transaction.description}" fue acreditado.`,
+          transactionId: payment.transaction.id,
+        });
         break;
 
       case 'rejected':

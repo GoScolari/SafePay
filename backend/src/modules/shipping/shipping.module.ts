@@ -6,9 +6,10 @@ import { ShippingController } from './shipping.controller';
 import { ShippingService } from './shipping.service';
 import { Shipment } from '../../database/entities/shipment.entity';
 import { Transaction } from '../../database/entities/transaction.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Shipment, Transaction]), ConfigModule, HttpModule],
+  imports: [TypeOrmModule.forFeature([Shipment, Transaction]), ConfigModule, HttpModule, NotificationsModule],
   controllers: [ShippingController],
   providers: [ShippingService],
   exports: [ShippingService],

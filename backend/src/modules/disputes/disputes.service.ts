@@ -18,10 +18,12 @@ import { Payment } from '../../database/entities/payment.entity';
 import {
   DisputeResolution,
   DisputeStatus,
+  NotificationType,
   PaymentStatus,
   TxRole,
   TxStatus,
 } from '../../common/enums';
+import { NotificationsService } from '../notifications/notifications.service';
 import { OpenDisputeDto } from './dto/open-dispute.dto';
 import { RespondDisputeDto } from './dto/respond-dispute.dto';
 import { ResolveDisputeDto } from './dto/resolve-dispute.dto';
@@ -43,6 +45,7 @@ export class DisputesService {
     private readonly paymentRepo: Repository<Payment>,
     private readonly http: HttpService,
     private readonly config: ConfigService,
+    private readonly notificationsService: NotificationsService,
   ) {
     this.mpAccessToken  = this.config.get<string>('mercadoPago.appId') ?? '';
     this.hasMpCredentials = !!this.mpAccessToken;
@@ -86,7 +89,16 @@ export class DisputesService {
     (tx as any).autoReleaseAt = null;
     await this.txRepo.save(tx);
 
-    // TODO: notify TX_DISPUTED al vendedor
+    const sellerId = tx.initiatorRole === TxRole.SELLER ? tx.initiatorId : tx.counterpartId;
+    if (sellerId) {
+      void this.notificationsService.notify({
+        userId: sellerId,
+        type: NotificationType.TX_DISPUTED,
+        title: 'Disputa abierta',
+        body: `El comprador abrió una disputa en "${tx.description}". Tienes 48h para responder.`,
+        transactionId: tx.id,
+      });
+    }
 
     return { disputeId: dispute.id, respondBefore, status: dispute.status };
   }
@@ -118,7 +130,13 @@ export class DisputesService {
     dispute.status = DisputeStatus.RESPONDED;
     await this.disputeRepo.save(dispute);
 
-    // TODO: notify al comprador
+    void this.notificationsService.notify({
+      userId: tx.initiatorRole === TxRole.SELLER ? (tx.counterpartId ?? tx.initiatorId) : tx.initiatorId,
+      type: NotificationType.TX_DISPUTED,
+      title: 'Vendedor respondió',
+      body: `El vendedor respondió a tu disputa en "${tx.description}".`,
+      transactionId: tx.id,
+    });
 
     return { id: dispute.id, status: dispute.status };
   }
@@ -162,7 +180,16 @@ export class DisputesService {
 
     await this.executeResolution(dto.resolution, payment, tx);
 
-    // TODO: notify a ambas partes
+    const txForNotify = dispute.transaction;
+    for (const userId of [txForNotify.initiatorId, txForNotify.counterpartId].filter(Boolean)) {
+      void this.notificationsService.notify({
+        userId: userId as string,
+        type: NotificationType.TX_COMPLETED,
+        title: 'Disputa resuelta',
+        body: `La disputa en "${txForNotify.description}" fue resuelta (${dto.resolution}).`,
+        transactionId: txForNotify.id,
+      });
+    }
 
     return { id: dispute.id, resolution: dispute.resolution, status: dispute.status };
   }
@@ -192,7 +219,15 @@ export class DisputesService {
 
         await this.executeResolution(DisputeResolution.BUYER, payment, tx);
 
-        // TODO: notify a ambas partes
+        for (const userId of [tx.initiatorId, tx.counterpartId].filter(Boolean)) {
+          void this.notificationsService.notify({
+            userId: userId as string,
+            type: NotificationType.TX_COMPLETED,
+            title: 'Disputa resuelta automáticamente',
+            body: `La disputa en "${tx.description}" fue resuelta a favor del comprador por falta de respuesta.`,
+            transactionId: tx.id,
+          });
+        }
       } catch (err) {
         this.logger.error(`Error al escalar disputa ${dispute.id}: ${String(err)}`);
       }
