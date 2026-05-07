@@ -43,6 +43,7 @@ import { Rating } from './database/entities/rating.entity';
         entities: [User, Transaction, Payment, TransactionFile, Shipment, Dispute, Notification, Rating],
         synchronize: process.env.NODE_ENV === 'development',
         logging: process.env.NODE_ENV === 'development',
+        timezone: 'Z',
       }),
     }),
     ThrottlerModule.forRoot([

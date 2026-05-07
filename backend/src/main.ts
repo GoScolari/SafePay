@@ -1,4 +1,7 @@
 import 'dotenv/config';
+import { types } from 'pg';
+// Tratar timestamp sin timezone como UTC para evitar conversiones incorrectas
+types.setTypeParser(1114, (val: string) => new Date(val + 'Z'));
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import * as cookieParser from 'cookie-parser';

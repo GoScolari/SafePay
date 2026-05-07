@@ -57,15 +57,15 @@ export class Transaction {
   @Column({ type: 'text' })
   description: string;
 
-  @Column({ name: 'accepted_at', nullable: true })
+  @Column({ name: 'accepted_at', type: 'timestamptz', nullable: true })
   acceptedAt: Date;
 
   @Index()
-  @Column({ name: 'auto_release_at', nullable: true })
+  @Column({ name: 'auto_release_at', type: 'timestamptz', nullable: true })
   autoReleaseAt: Date;
 
   @Index()
-  @Column({ name: 'expires_at', nullable: true })
+  @Column({ name: 'expires_at', type: 'timestamptz', nullable: true })
   expiresAt: Date;
 
   @CreateDateColumn({ name: 'created_at' })
