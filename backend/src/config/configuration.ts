@@ -23,6 +23,7 @@ export default () => ({
     clientSecret: process.env.MP_CLIENT_SECRET ?? '',
     webhookSecret: process.env.MP_WEBHOOK_SECRET ?? '',
     marketplaceFee: parseInt(process.env.MP_MARKETPLACE_FEE ?? '990', 10),
+    encryptionKey: process.env.MP_ENCRYPTION_KEY ?? '',
   },
 
   twilio: {
