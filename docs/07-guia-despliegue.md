@@ -13,10 +13,11 @@
 |---|---|
 | Rama git | `feature/*` → `develop` |
 | Base de datos | PostgreSQL local (Docker) |
+| Puerto PostgreSQL (host) | `5433` → mapeado al `5432` interno del contenedor |
 | Pagos MP | Sandbox (cuentas de prueba) |
 | SMS Twilio | Números de prueba |
 | Push FCM | Proyecto Firebase dev |
-| Deploy | Manual (`npm run dev`) |
+| Deploy | Manual (`npm run start:dev`) |
 
 ### Staging — `staging-api.safepay.cl`
 
@@ -156,7 +157,7 @@ services:
       POSTGRES_DB: safepay_dev
       POSTGRES_USER: safepay
       POSTGRES_PASSWORD: "${DB_PASS}"
-    ports: ["5432:5432"]
+    ports: ["5433:5432"]    # 5433 en host — ver nota sobre conflicto de puertos en Windows
     volumes: ["postgres_data:/var/lib/postgresql/data"]
 
   redis:
@@ -166,6 +167,24 @@ services:
 volumes:
   postgres_data:
 ```
+
+### ⚠️ Conflicto de puertos en Windows
+
+Si tenés PostgreSQL instalado nativamente en Windows, el puerto `5432` del host ya está ocupado. El `docker-compose.yml` mapea el contenedor al puerto **`5433`** para evitar el conflicto. En ese caso `DB_PORT=5433` en el `.env`.
+
+Para verificar si este es tu caso:
+
+```powershell
+netstat -ano | findstr ":5432"
+# Si aparece una línea con postgres.exe, tenés Postgres nativo corriendo
+```
+
+```powershell
+# Identificar el proceso por PID
+tasklist /FI "PID eq <PID_ENCONTRADO>"
+```
+
+Si el proceso es `postgres.exe` (no `com.docker.backend.exe`), usá `DB_PORT=5433`.
 
 ---
 

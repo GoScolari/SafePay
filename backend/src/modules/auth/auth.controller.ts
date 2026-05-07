@@ -1,36 +1,66 @@
-import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  HttpCode,
+  HttpStatus,
+  UseGuards,
+  Req,
+  Res,
+} from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
+import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
+import { RegisterDto } from './dto/register.dto';
+import { LoginDto } from './dto/login.dto';
+import { VerifyOtpDto } from './dto/verify-otp.dto';
+import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @Controller('auth')
+@Throttle({ default: { limit: 5, ttl: 60000 } })
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
-  register(@Body() body: any) {
-    return this.authService.register(body);
+  register(@Body() dto: RegisterDto) {
+    return this.authService.register(dto);
   }
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  login(@Body() body: any) {
-    return this.authService.login(body);
+  login(@Body() dto: LoginDto) {
+    return this.authService.login(dto);
   }
 
   @Post('verify-otp')
   @HttpCode(HttpStatus.OK)
-  verifyOtp(@Body() body: any) {
-    return this.authService.verifyOtp(body);
+  verifyOtp(
+    @Body() dto: VerifyOtpDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    return this.authService.verifyOtp(dto, res);
   }
 
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  refresh(@Body() body: any) {
-    return this.authService.refresh(body);
+  @UseGuards(JwtRefreshGuard)
+  refresh(
+    @CurrentUser() user: { id: string },
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const rawToken: string = req.cookies?.['refresh_token'] ?? '';
+    return this.authService.refresh(user.id, rawToken, res);
   }
 
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  logout(@Body() body: any) {
-    return this.authService.logout(body);
+  @UseGuards(JwtRefreshGuard)
+  logout(
+    @CurrentUser() user: { id: string },
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    return this.authService.logout(user.id, res);
   }
 }

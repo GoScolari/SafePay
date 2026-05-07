@@ -23,7 +23,7 @@ import { User } from '../../database/entities/user.entity';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, JwtRefreshStrategy],
+  providers: [AuthService, JwtStrategy, JwtRefreshStrategy, ConfigService],
   exports: [AuthService],
 })
 export class AuthModule {}
