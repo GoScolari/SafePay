@@ -30,15 +30,15 @@ export class Payment {
   amountTotal: number;
 
   @Column({ name: 'amount_fee_mp', type: 'integer', nullable: true })
-  amountFeeMp: number;
+  amountFeeMp: number | null;
 
   @Column({ name: 'amount_fee_platform', type: 'integer', nullable: true })
-  amountFeePlatform: number;
+  amountFeePlatform: number | null;
 
   @Column({ name: 'amount_seller', type: 'integer', nullable: true })
-  amountSeller: number;
+  amountSeller: number | null;
 
-  @Column({ name: 'released_at', nullable: true })
+  @Column({ name: 'released_at', type: 'timestamptz', nullable: true })
   releasedAt: Date;
 
   @CreateDateColumn({ name: 'created_at' })
