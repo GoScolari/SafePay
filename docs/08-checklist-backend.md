@@ -50,7 +50,7 @@
 - [x] `POST /transactions` — crear transacción, generar `slug` único, calcular `fee`, setear `expires_at` +24h
 - [x] `GET /transactions/my` — listar transacciones del usuario autenticado (iniciador o contraparte)
 - [x] `GET /transactions/:id` — detalle completo con relaciones
-- [x] `GET /tx/:slug` — lookup público por slug (para el link compartible)
+- [x] `GET /transactions/public/:slug` — lookup público por slug sin auth (para el deep link compartible `safepay.cl/tx/:slug`)
 - [x] `POST /transactions/:id/accept` — contraparte acepta, transición `PROPUESTA → CONFIRMADA`
 - [x] `POST /transactions/:id/cancel` — cancelar antes del despacho, transición `PAGADO → CANCELADO`
 - [x] Máquina de estados — validar transiciones permitidas
@@ -113,6 +113,7 @@
 - [x] `PATCH /notifications/:id/read` — marcar como leída
 - [x] Servicio interno `notify()` — guardar en DB + enviar push FCM (graceful sin credenciales)
 - [x] Disparar `notify()` en cada módulo — conectado en Payments (TX_PAID), Shipping (TX_DELIVERED, TX_SHIPPING_ALERT), Disputes (TX_DISPUTED, TX_COMPLETED)
+- [ ] `TX_SHIPPED` — notificar al comprador cuando el vendedor registra tracking (`shipping.service.ts` tiene TODO pendiente)
 - [ ] Disparar SMS vía Twilio en eventos críticos — pendiente (fuera de scope MVP)
 
 ---
