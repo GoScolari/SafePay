@@ -205,7 +205,7 @@ PAGADO    → CANCELADO (antes del despacho)
 ```env
 # Base de datos
 DB_HOST=localhost
-DB_PORT=5432
+DB_PORT=5432        # En Windows con PostgreSQL nativo instalado, usar 5433 (docker-compose mapea 5433→5432)
 DB_NAME=safepay_db
 DB_USER=***
 DB_PASS=***

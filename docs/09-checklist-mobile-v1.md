@@ -1,6 +1,6 @@
 # SafePay — Checklist de Desarrollo Mobile
 
-**Stack:** React Native · Expo Router v3 · Zustand · React Query · NativeWind  
+**Stack:** React Native · Expo Router ~6.x · Zustand · React Query · StyleSheet nativo  
 **Estado:** En progreso · **Fecha inicio:** Mayo 2026
 
 ---

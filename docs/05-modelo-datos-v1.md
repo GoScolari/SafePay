@@ -1,6 +1,6 @@
 # SafePay — Modelo de Datos
 
-**Base de datos:** PostgreSQL · TypeORM · 8 tablas · 8 enums  
+**Base de datos:** PostgreSQL · TypeORM · 8 tablas · 13 enums  
 **Versión:** 1.0 · **Fecha:** Mayo 2026 · **Tipo:** Documento técnico interno
 
 ---
@@ -61,6 +61,7 @@ Usuarios registrados. Vendedores y compradores comparten la misma tabla.
 | rating | DECIMAL(2,1) | | Promedio de ratings. Rango 1.0–5.0. |
 | total_tx | INTEGER | | Contador de transacciones completadas. |
 | role | user_role ENUM | NN | `user` \| `admin`. Default: `user`. |
+| banned | BOOLEAN | NN | Default: false. Bloqueo por fraude vía panel admin. |
 | created_at | TIMESTAMP | NN | Default: NOW() UTC |
 | updated_at | TIMESTAMP | NN | Auto-actualizado por TypeORM |
 
@@ -123,7 +124,7 @@ Información de envío por courier.
 |---|---|---|---|
 | id | UUID | PK | |
 | transaction_id | UUID | FK | |
-| courier | courier_type ENUM | NN | chilexpress \| bluexpress \| starken |
+| courier | courier_type ENUM | NN | chilexpress \| bluexpress |
 | tracking_number | VARCHAR(50) | NN | Número de seguimiento |
 | status | shipment_status ENUM | IDX | pending \| in_transit \| delivered \| failed \| lost |
 | raw_status | VARCHAR(100) | | Estado original del courier |
@@ -141,6 +142,7 @@ Registro de disputas por transacción.
 | opened_by | UUID | FK | |
 | reason | dispute_reason ENUM | NN | |
 | description | TEXT | | Min 10 chars para motivo "other" |
+| vendor_response | TEXT | | Respuesta del vendedor. Se llena al hacer POST /disputes/:id/respond. |
 | status | dispute_status ENUM | IDX | open \| responded \| resolved |
 | resolution | dispute_resolution ENUM | | buyer \| seller \| split |
 | resolution_note | TEXT | | Justificación del moderador |
@@ -265,6 +267,13 @@ other             → Otro motivo (requiere descripción)
 open       → Recién abierta
 responded  → Vendedor respondió
 resolved   → Resuelta por moderación
+```
+
+### `dispute_resolution`
+```
+buyer  → Fallo a favor del comprador (reembolso completo)
+seller → Fallo a favor del vendedor (liberación del pago)
+split  → Resolución dividida (50% cada parte)
 ```
 
 ### `notification_type`

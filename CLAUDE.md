@@ -12,18 +12,18 @@ Toda la especificación del sistema está en `SafePay/Docs/`. Consultar siempre 
 
 | Archivo | Contenido |
 |---|---|
-| `01-concepto-producto.md` | Flujos de negocio, estados de transacción, modelo de cobro |
-| `02-arquitectura-backend.md` | Módulos NestJS, endpoints, máquina de estados, AdminModule |
-| `03-arquitectura-mobile.md` | Estructura Expo Router, pantallas, Zustand stores |
-| `04-integraciones.md` | Mercado Pago (OAuth + Split Payments), couriers, Twilio, FCM |
-| `05-modelo-datos.md` | Esquema PostgreSQL completo — 8 tablas, 8+ enums |
-| `06-flujo-disputas.md` | Plazos, criterios de resolución, cron jobs, notificaciones |
-| `07-guia-despliegue.md` | Docker, GitHub Actions, AWS ECS/RDS/S3, checklist prod |
+| `01-concepto-producto-v1.md` | Flujos de negocio, estados de transacción, modelo de cobro |
+| `02-arquitectura-backend-v1.md` | Módulos NestJS, endpoints, máquina de estados, AdminModule |
+| `03-arquitectura-mobile-v1.md` | Estructura Expo Router, pantallas, Zustand stores |
+| `04-integraciones-v1.md` | Mercado Pago (OAuth + Split Payments), couriers, Twilio, FCM |
+| `05-modelo-datos-v1.md` | Esquema PostgreSQL completo — 8 tablas, 13 enums |
+| `06-flujo-disputas-v1.md` | Plazos, criterios de resolución, cron jobs, notificaciones |
+| `07-guia-despliegue-v1.md` | Docker, GitHub Actions, AWS ECS/RDS/S3, checklist prod |
 
 ## Stack
 
 **Backend:** NestJS + TypeScript + TypeORM + PostgreSQL 15
-**Mobile:** React Native + Expo Router v3 + Zustand + React Query + Axios
+**Mobile:** React Native + Expo Router v6 + Zustand + React Query + Axios
 **Pagos:** Mercado Pago Marketplace API (Split Payments)
 **Infra:** AWS ECS Fargate + RDS + S3 + Secrets Manager · Docker · GitHub Actions
 
@@ -34,11 +34,11 @@ Toda la especificación del sistema está en `SafePay/Docs/`. Consultar siempre 
 - Todos los montos en CLP como enteros (sin decimales)
 - UUIDs generados con `gen_random_uuid()`
 - Timestamps siempre en UTC
-- No crear nuevos enums sin revisar `05-modelo-datos.md` — los existentes están definidos ahí
+- No crear nuevos enums sin revisar `05-modelo-datos-v1.md` — los existentes están definidos ahí
 
 ## Arquitectura backend — módulos NestJS
 
-El backend se organiza en 8 módulos con jerarquía clara:
+El backend se organiza en 9 módulos con jerarquía clara:
 
 - **`AuthModule`** (core): registro, login, OTP SMS via Twilio, JWT (access 15min + refresh 30d en HTTP-only cookie)
 - **`UsersModule`** (core): perfil, validación RUT, conexión OAuth MP del vendedor (`/users/mp/connect` → `/users/mp/callback`)
@@ -90,6 +90,10 @@ app/
 ```
 
 El pago desde `TxLinkScreen` es 100% anónimo (checkout MP via WebView). Tras pagar, SafePay solicita registro con `PostPayRegister`. Confirmar recepción, abrir disputa e ingresar tracking sí requieren auth.
+
+## Estilos mobile
+
+Los estilos se implementan con `StyleSheet.create()` nativo de React Native. **No usar NativeWind ni Tailwind** — el proyecto no tiene NativeWind instalado. Colores centralizados en `mobile/constants/colors.ts`.
 
 ## Variables de entorno
 

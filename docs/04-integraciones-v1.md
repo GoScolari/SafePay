@@ -131,7 +131,6 @@ async createPreference(tx: Transaction): Promise<string> {
     headers: { Authorization: `Bearer ${vendor.mpAccessToken}` },
   });
 
-```typescript
   return response.data.init_point;
 }
 
