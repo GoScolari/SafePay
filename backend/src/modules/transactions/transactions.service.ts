@@ -91,7 +91,8 @@ export class TransactionsService {
     tx.counterpartId = userId;
     tx.status = TxStatus.CONFIRMADA;
     tx.acceptedAt = new Date();
-    return this.txRepo.save(tx);
+    await this.txRepo.save(tx);
+    return this.findById(id);
   }
 
   async cancel(id: string, userId: string): Promise<Transaction> {

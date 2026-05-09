@@ -162,7 +162,7 @@
 - [x] N4 Teléfono duplicado — HTTP 409
 - [x] N5 Webhook sin HMAC — HTTP 401 (requiere `MP_WEBHOOK_SECRET` en `.env`)
 - [x] **Bug #2 resuelto** — `@Exclude()` en `refreshToken`, `mpAccessToken`, `deviceToken` de `user.entity.ts` + `ClassSerializerInterceptor` global en `main.ts`
-- [ ] **Bug #1 pendiente** — `counterpartId: null` en response de accept (cosmético, DB OK) → reload entidad tras save
+- [x] **Bug #1 resuelto** — `accept()` ahora hace `await save()` + `return findById(id)` para recargar relaciones antes de responder
 
 ---
 
