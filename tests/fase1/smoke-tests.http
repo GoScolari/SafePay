@@ -1,0 +1,160 @@
+@api = http://localhost:3000/api/v1
+@vendorPhone = +56931234567
+@buyerPhone = +56987654321
+
+### T1 - Health check
+GET {{api}}/health
+
+### T2 - Register vendedor
+# @name registerVendor
+POST {{api}}/auth/register
+Content-Type: application/json
+
+{
+  "fullName": "Vendedor Test",
+  "phone": "{{vendorPhone}}"
+}
+
+### T3 - Verify OTP vendedor
+# @name verifyVendor
+POST {{api}}/auth/verify-otp
+Content-Type: application/json
+
+{
+  "phone": "{{vendorPhone}}",
+  "code": "123456"
+}
+
+###
+@tokenVendor = {{verifyVendor.response.body.accessToken}}
+
+### T4 - Get me vendedor
+GET {{api}}/users/me
+Authorization: Bearer {{tokenVendor}}
+
+### T4b - Guard rechaza sin token (esperar 401)
+GET {{api}}/users/me
+
+### T5 - Register comprador
+POST {{api}}/auth/register
+Content-Type: application/json
+
+{
+  "fullName": "Comprador Test",
+  "phone": "{{buyerPhone}}"
+}
+
+### T6 - Verify OTP comprador
+# @name verifyBuyer
+POST {{api}}/auth/verify-otp
+Content-Type: application/json
+
+{
+  "phone": "{{buyerPhone}}",
+  "code": "654321"
+}
+
+###
+@tokenBuyer = {{verifyBuyer.response.body.accessToken}}
+
+### T7 - Crear transacción (vendedor, $80.000 → fee $990)
+# @name createTx
+POST {{api}}/transactions
+Authorization: Bearer {{tokenVendor}}
+Content-Type: application/json
+
+{
+  "initiatorRole": "seller",
+  "modality": "shipping",
+  "amount": 80000,
+  "feePayer": "buyer",
+  "description": "Bicicleta MTB rodado 29 usada en buen estado"
+}
+
+###
+@txId = {{createTx.response.body.id}}
+@txSlug = {{createTx.response.body.slug}}
+
+### T7b - Fee regresión ($250.000 → debe dar 1490)
+POST {{api}}/transactions
+Authorization: Bearer {{tokenVendor}}
+Content-Type: application/json
+
+{
+  "initiatorRole": "seller",
+  "modality": "presential",
+  "amount": 250000,
+  "feePayer": "split",
+  "description": "Notebook Lenovo IdeaPad 14 pulgadas i5 8GB"
+}
+
+### T8 - Lookup público por slug (sin auth)
+GET {{api}}/transactions/public/{{txSlug}}
+
+### T9 - Aceptar transacción (comprador)
+POST {{api}}/transactions/{{txId}}/accept
+Authorization: Bearer {{tokenBuyer}}
+
+### T9b - Auto-aceptar bloqueado (vendedor no puede aceptar la suya, esperar 400/403)
+POST {{api}}/transactions/{{txId}}/accept
+Authorization: Bearer {{tokenVendor}}
+
+### T9c - Re-aceptar bloqueado (tx ya CONFIRMADA, esperar 400)
+POST {{api}}/transactions/{{txId}}/accept
+Authorization: Bearer {{tokenBuyer}}
+
+### T10 - Mis transacciones (vendedor)
+GET {{api}}/transactions/my
+Authorization: Bearer {{tokenVendor}}
+
+### T10b - Mis transacciones (comprador)
+GET {{api}}/transactions/my
+Authorization: Bearer {{tokenBuyer}}
+
+### N1 - Monto < mínimo $1.000 (esperar 400)
+POST {{api}}/transactions
+Authorization: Bearer {{tokenVendor}}
+Content-Type: application/json
+
+{
+  "initiatorRole": "seller",
+  "modality": "shipping",
+  "amount": 500,
+  "feePayer": "buyer",
+  "description": "Algo barato fuera de rango"
+}
+
+### N2 - Monto > máximo $2.000.000 (esperar 400)
+POST {{api}}/transactions
+Authorization: Bearer {{tokenVendor}}
+Content-Type: application/json
+
+{
+  "initiatorRole": "seller",
+  "modality": "shipping",
+  "amount": 5000000,
+  "feePayer": "buyer",
+  "description": "Algo muy caro fuera de rango"
+}
+
+### N3 - Token inválido (esperar 401)
+GET {{api}}/users/me
+Authorization: Bearer token_falso_inventado
+
+### N4 - Teléfono duplicado (esperar 409)
+POST {{api}}/auth/register
+Content-Type: application/json
+
+{
+  "fullName": "Otro Nombre",
+  "phone": "{{vendorPhone}}"
+}
+
+### N5 - Webhook MP sin firma HMAC (esperar 401 — CRITICO de seguridad)
+POST {{api}}/payments/webhook
+Content-Type: application/json
+
+{
+  "type": "payment",
+  "data": { "id": "fake_payment" }
+}

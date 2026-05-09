@@ -1,7 +1,7 @@
 # SafePay — Checklist de Desarrollo Backend
 
 **Stack:** NestJS · PostgreSQL · TypeORM  
-**Estado:** En progreso · **Fecha inicio:** Mayo 2026
+**Estado:** Fase 1 completada ✅⚠️ · **Fecha inicio:** Mayo 2026
 
 ---
 
@@ -143,6 +143,26 @@
   - `payments.service.spec.ts` — unit_price, initiate, release, refund, HMAC webhook (71% cobertura)
 - [ ] Tests de integración endpoints principales
 - [ ] Cobertura ≥ 80% en módulos core — `transactions.service` 94%, `payments.service` 71%, pendiente `auth.service` y resto
+
+---
+
+## Fase 1 — Smoke Test Backend (ejecutado 2026-05-08)
+
+> Resultados completos en `tests/fase1/results.md`. Ver detalle en `docs/10-fase1-smoke-test-backend-v1.md §15`.
+
+- [x] T1 Health check — API arranca, DB conectada
+- [x] T2/T3 Auth register + verify-otp — usuarios creados, JWT emitidos
+- [x] T4 Guard JWT — endpoints protegidos rechazando sin token (401)
+- [x] T7 Crear transacción — fee por tramo, slug, expiresAt correctos
+- [x] T8 Lookup público — endpoint sin auth, sin datos sensibles
+- [x] T9 Aceptar transacción — transición PROPUESTA → CONFIRMADA, auto-accept bloqueado (403)
+- [x] T10 Listar mis transacciones — filtro por usuario correcto, sin cross-leak
+- [x] N1/N2 Montos fuera de rango — HTTP 400 con mensaje descriptivo
+- [x] N3 Token inválido — HTTP 401
+- [x] N4 Teléfono duplicado — HTTP 409
+- [x] N5 Webhook sin HMAC — HTTP 401 (requiere `MP_WEBHOOK_SECRET` en `.env`)
+- [x] **Bug #2 resuelto** — `@Exclude()` en `refreshToken`, `mpAccessToken`, `deviceToken` de `user.entity.ts` + `ClassSerializerInterceptor` global en `main.ts`
+- [ ] **Bug #1 pendiente** — `counterpartId: null` en response de accept (cosmético, DB OK) → reload entidad tras save
 
 ---
 

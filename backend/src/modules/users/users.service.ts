@@ -27,11 +27,10 @@ export class UsersService {
     this.appUrl = this.config.get<string>('apiUrl') ?? 'http://localhost:3000';
   }
 
-  async findById(id: string): Promise<Partial<User>> {
+  async findById(id: string): Promise<User> {
     const user = await this.userRepo.findOne({ where: { id } });
     if (!user) throw new NotFoundException('Usuario no encontrado');
-    const { refreshToken: _rt, mpAccessToken: _mp, ...safe } = user;
-    return safe;
+    return user;
   }
 
   async update(id: string, dto: UpdateProfileDto): Promise<Partial<User>> {

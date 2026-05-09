@@ -2,8 +2,8 @@ import 'dotenv/config';
 import { types } from 'pg';
 // Tratar timestamp sin timezone como UTC para evitar conversiones incorrectas
 types.setTypeParser(1114, (val: string) => new Date(val + 'Z'));
-import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { NestFactory, Reflector } from '@nestjs/core';
+import { ClassSerializerInterceptor, ValidationPipe } from '@nestjs/common';
 import * as cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 
@@ -11,6 +11,8 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
 
   app.use(cookieParser());
+
+  app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
 
   app.setGlobalPrefix('api/v1');
 

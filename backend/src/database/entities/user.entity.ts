@@ -6,6 +6,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { Exclude } from 'class-transformer';
 import { UserRole } from '../../common/enums';
 import { Transaction } from './transaction.entity';
 import { Notification } from './notification.entity';
@@ -36,9 +37,11 @@ export class User {
   @Column({ name: 'rut_verified', default: false })
   rutVerified: boolean;
 
+  @Exclude()
   @Column({ name: 'mp_access_token', type: 'text', nullable: true })
   mpAccessToken: string;
 
+  @Exclude()
   @Column({ name: 'device_token', type: 'text', nullable: true })
   deviceToken: string;
 
@@ -54,6 +57,7 @@ export class User {
   @Column({ default: false })
   banned: boolean;
 
+  @Exclude()
   @Column({ name: 'refresh_token', type: 'text', nullable: true })
   refreshToken: string | null;
 
