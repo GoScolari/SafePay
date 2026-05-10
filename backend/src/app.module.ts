@@ -1,3 +1,4 @@
+import * as Joi from 'joi';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AppController } from './app.controller';
@@ -30,6 +31,43 @@ import { Rating } from './database/entities/rating.entity';
       isGlobal: true,
       load: [configuration],
       envFilePath: '.env',
+      validationSchema: Joi.object({
+        NODE_ENV: Joi.string().valid('development', 'production', 'test').default('development'),
+        DB_HOST: Joi.string().required(),
+        DB_PORT: Joi.number().default(5432),
+        DB_NAME: Joi.string().required(),
+        DB_USER: Joi.string().required(),
+        DB_PASS: Joi.string().required(),
+        JWT_SECRET: Joi.when('NODE_ENV', {
+          is: 'production',
+          then: Joi.string().min(32).required(),
+          otherwise: Joi.string().default('dev-secret'),
+        }),
+        JWT_REFRESH_SECRET: Joi.when('NODE_ENV', {
+          is: 'production',
+          then: Joi.string().min(32).required(),
+          otherwise: Joi.string().default('dev-refresh-secret'),
+        }),
+        JWT_EXPIRES_IN: Joi.string().default('15m'),
+        JWT_REFRESH_EXPIRES: Joi.string().default('30d'),
+        MP_WEBHOOK_SECRET: Joi.when('NODE_ENV', {
+          is: 'production',
+          then: Joi.string().required(),
+          otherwise: Joi.string().default(''),
+        }),
+        MP_CLIENT_SECRET: Joi.when('NODE_ENV', {
+          is: 'production',
+          then: Joi.string().required(),
+          otherwise: Joi.string().default(''),
+        }),
+        MP_APP_ID: Joi.string().default(''),
+        MP_MARKETPLACE_FEE: Joi.number().default(990),
+        MP_ENCRYPTION_KEY: Joi.string().default(''),
+      }),
+      validationOptions: {
+        allowUnknown: true,
+        abortEarly: false,
+      },
     }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],

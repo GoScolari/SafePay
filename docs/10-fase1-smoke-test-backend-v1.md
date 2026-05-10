@@ -36,7 +36,7 @@ Antes de empezar, verificar que estos elementos están listos. Si alguno falta, 
 
 > **Nota Windows:** Si tenés PostgreSQL nativo instalado, el puerto 5432 está ocupado y `docker-compose.yml` mapea al 5433. Verificar con `netstat -ano | findstr ":5432"`. Si aparece `postgres.exe`, usar `DB_PORT=5433` en el `.env`.
 
-> **Nota teléfonos chilenos (validado en ejecución real):** La validación usa `libphonenumber-js/max` que verifica rangos reales del plan de numeración chileno. En Chile, los números móviles válidos para test son del prefijo `93x`–`99x`. Los números `+56911111111` y `+56922222222` **no son válidos** porque el rango `91x` no está asignado. Usar siempre `+56931234567` (vendedor) y `+56987654321` (comprador).
+> **Nota teléfonos chilenos (validado en ejecución real):** La validación usa `libphonenumber-js/max` que verifica rangos reales del plan de numeración chileno. En Chile, los números móviles válidos para test son del prefijo `93x`–`99x` (Movistar/Entel). Usar siempre `+56931234567` (vendedor) y `+56987654321` (comprador).
 
 ---
 

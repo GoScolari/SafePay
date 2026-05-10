@@ -168,6 +168,7 @@
 
 ## Antes de ir a producción
 - [x] `synchronize: false` en producción (`NODE_ENV !== 'development'`) — `data-source.ts` creado, scripts `migration:generate/run/revert` en package.json
+- [x] Validación de vars de entorno al arranque — Joi schema en `ConfigModule` (`app.module.ts`): vars de DB siempre requeridas; `JWT_SECRET`, `JWT_REFRESH_SECRET`, `MP_WEBHOOK_SECRET`, `MP_CLIENT_SECRET` requeridas en `production`, defaults en `dev`. **Bug #3 resuelto.**
 - [ ] Variables de entorno cargadas desde AWS Secrets Manager
 - [x] CORS restringido a dominios `safepay.cl` en producción, `localhost` en desarrollo
 - [ ] Webhook URL registrado en panel Mercado Pago

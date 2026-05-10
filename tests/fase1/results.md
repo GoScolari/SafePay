@@ -57,13 +57,14 @@
 - **Causa:** La entidad `User` se serializaba completa sin filtros de campos sensibles
 - **Resolución (2026-05-08):** `@Exclude()` sobre `refreshToken`, `mpAccessToken` y `deviceToken` en `user.entity.ts` + `ClassSerializerInterceptor` registrado globalmente en `main.ts` + `findById` simplificado en `users.service.ts`
 
-### Bug #3 — Webhook acepta requests sin HMAC si MP_WEBHOOK_SECRET está vacío (alta — configuración)
+### Bug #3 — Webhook acepta requests sin HMAC si MP_WEBHOOK_SECRET está vacío ✅ RESUELTO
 - **Test:** N5
 - **Severidad:** alta (en producción sería crítica)
 - **Reproducción:** Con `.env` sin `MP_WEBHOOK_SECRET`, cualquier POST a `/payments/webhook` devuelve 200
 - **Esperado:** En producción debe rechazar. En dev es aceptable con log de warning.
 - **Causa:** El código hace `if (this.mpWebhookSecret)` — skip correcto en dev, peligroso si se despliega sin el secret
-- **Fix:** La lógica del código es correcta. El fix es asegurarse que el deploy de producción tenga `MP_WEBHOOK_SECRET` en secrets manager. Agregar validación al arranque que rompa si `NODE_ENV=production` y `MP_WEBHOOK_SECRET` está vacío.
+- **Fix propuesto al detectar el bug:** Validación al arranque que rompa si `NODE_ENV=production` y `MP_WEBHOOK_SECRET` está vacío.
+- **Resolución (2026-05-09):** Joi schema en `ConfigModule` (`app.module.ts`) con `JWT_SECRET`, `JWT_REFRESH_SECRET`, `MP_WEBHOOK_SECRET` y `MP_CLIENT_SECRET` requeridos cuando `NODE_ENV=production`. El proceso termina con exit 1 si falta alguna en producción. Defaults en desarrollo.
 
 ---
 
