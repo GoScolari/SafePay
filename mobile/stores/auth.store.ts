@@ -15,8 +15,10 @@ interface AuthState {
   user: AuthUser | null;
   accessToken: string | null;
   isAuthenticated: boolean;
+  pendingTxId: string | null;
   setTokens: (accessToken: string, user: AuthUser) => void;
   clearAuth: () => void;
+  setPendingTx: (txId: string | null) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -25,6 +27,7 @@ export const useAuthStore = create<AuthState>()(
       user:            null,
       accessToken:     null,
       isAuthenticated: false,
+      pendingTxId:     null,
 
       setTokens: (accessToken, user) => {
         setAccessToken(accessToken);
@@ -35,6 +38,8 @@ export const useAuthStore = create<AuthState>()(
         setAccessToken(null);
         set({ accessToken: null, user: null, isAuthenticated: false });
       },
+
+      setPendingTx: (txId) => set({ pendingTxId: txId }),
     }),
     {
       name:    'safepay-auth',

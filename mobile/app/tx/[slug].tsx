@@ -1,5 +1,5 @@
 import {
-  View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView,
+  View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Alert,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,6 +20,7 @@ const FEE_PAYER_LABEL: Record<string, string> = {
 export default function TxPublicScreen() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const setPendingTx    = useAuthStore((s) => s.setPendingTx);
 
   const [initiating, setInitiating] = useState(false);
 
@@ -49,10 +50,12 @@ export default function TxPublicScreen() {
     );
   }
 
-  // Determinar acción según estado
+  // Flujo A: vendedor inicia → comprador confirma desde este link
   const canConfirm = tx.status === 'PROPUESTA' && tx.initiatorRole === 'seller';
+  // Flujo B: comprador inicia → vendedor debe aceptar desde la app autenticada
+  const needsSellerAccept = tx.status === 'PROPUESTA' && tx.initiatorRole === 'buyer';
+
   const STATUS_MSG: Record<string, { emoji: string; msg: string }> = {
-    PROPUESTA:   { emoji: '⏳', msg: 'El vendedor aún no aceptó esta propuesta.' },
     CONFIRMADA:  { emoji: '✅', msg: 'Transacción confirmada. Ingresá a la app para pagar.' },
     PAGADO:      { emoji: '💰', msg: 'Esta transacción ya fue pagada.' },
     EN_TRANSITO: { emoji: '📦', msg: 'El artículo está en camino.' },
@@ -63,6 +66,32 @@ export default function TxPublicScreen() {
     REEMBOLSADO: { emoji: '↩️', msg: 'Esta transacción fue reembolsada.' },
     EXPIRADO:    { emoji: '⏰', msg: 'Esta transacción expiró.' },
   };
+
+  if (needsSellerAccept) {
+    if (isAuthenticated) {
+      router.replace(`/(app)/transactions/${tx.id}` as never);
+      return <View style={styles.center}><ActivityIndicator color={Colors.primary} size="large" /></View>;
+    }
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <View style={styles.center}>
+          <Text style={styles.logoSolo}>SafePay</Text>
+          <Text style={styles.errorEmoji}>🤝</Text>
+          <Text style={styles.errorTitle}>Te invitaron a vender</Text>
+          <Text style={styles.errorSub}>
+            El comprador quiere comprar "{tx.description}" por {formatCLP(tx.amount)}.{'\n'}
+            Ingresá a tu cuenta para aceptar o rechazar la transacción.
+          </Text>
+          <TouchableOpacity
+            style={styles.loginBtn}
+            onPress={() => router.push('/(auth)/login' as never)}
+          >
+            <Text style={styles.loginBtnText}>Iniciar sesión para aceptar</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (!canConfirm) {
     const info = STATUS_MSG[tx.status] ?? { emoji: '❓', msg: 'Estado desconocido.' };
@@ -75,16 +104,18 @@ export default function TxPublicScreen() {
   }
 
   const handleConfirm = async () => {
+    if (!isAuthenticated) {
+      setPendingTx(tx.id);
+      router.push('/(auth)/login' as never);
+      return;
+    }
     setInitiating(true);
     try {
       await api.post(`/transactions/${tx.id}/accept`);
-      if (!isAuthenticated) {
-        router.replace('/(auth)/login' as never);
-      } else {
-        router.replace(`/(app)/transactions/${tx.id}` as never);
-      }
-    } catch {
-      router.push(`/(auth)/login` as never);
+      router.replace(`/(app)/transactions/${tx.id}` as never);
+    } catch (e: any) {
+      const msg = e?.response?.data?.message ?? 'No se pudo confirmar la transacción.';
+      Alert.alert('Error', msg);
     } finally {
       setInitiating(false);
     }
@@ -171,7 +202,10 @@ const styles = StyleSheet.create({
   payBtnText:   { color: '#fff', fontSize: 16, fontWeight: '700' },
   errorEmoji:   { fontSize: 48 },
   errorTitle:   { fontSize: 18, fontWeight: '700', color: Colors.textPrimary },
-  errorSub:     { fontSize: 14, color: Colors.textSecondary, textAlign: 'center' },
+  errorSub:     { fontSize: 14, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
+  logoSolo:     { fontSize: 24, fontWeight: '800', color: Colors.primary, marginBottom: 8 },
+  loginBtn:     { marginTop: 24, backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 14, paddingHorizontal: 32 },
+  loginBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   wvHeader:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: Colors.border, backgroundColor: Colors.surface },
   backBtn:      { minWidth: 32 },
   backText:     { fontSize: 20, color: Colors.primary },

@@ -1,6 +1,6 @@
 import * as Clipboard from 'expo-clipboard';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, router } from 'expo-router';
 import { useCallback } from 'react';
 import { api } from '@/lib/api';
 import { Transaction } from '@/stores/transaction.store';
@@ -37,9 +37,23 @@ export function useTransaction(id: string) {
     onSuccess: invalidate,
   });
 
-  const { mutate: devDeliver, isPending: delivering } = useMutation({
+  const { mutate: deliver, isPending: delivering } = useMutation({
+    mutationFn: () => api.post(`/transactions/${id}/deliver`),
+    onSuccess: invalidate,
+  });
+
+  const { mutate: devDeliver, isPending: devDelivering } = useMutation({
     mutationFn: () => api.post(`/shipping/dev-deliver/${id}`),
     onSuccess: invalidate,
+  });
+
+
+  const { mutate: archive, isPending: archiving } = useMutation({
+    mutationFn: () => api.patch(`/transactions/${id}/archive`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      router.back();
+    },
   });
 
   const copyLink = async () => {
@@ -48,5 +62,5 @@ export function useTransaction(id: string) {
     await Clipboard.setStringAsync(`${base}/tx/${tx.slug}`);
   };
 
-  return { tx, isLoading, isError, refetch, accept, accepting, cancel, cancelling, releasePayment, releasing, devDeliver, delivering, copyLink };
+  return { tx, isLoading, isError, refetch, accept, accepting, cancel, cancelling, releasePayment, releasing, deliver, delivering, devDeliver, devDelivering, archive, archiving, copyLink };
 }

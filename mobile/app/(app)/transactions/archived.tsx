@@ -1,0 +1,76 @@
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
+import { router } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { api } from '@/lib/api';
+import { TransactionCard } from '@/components/TransactionCard';
+import { Transaction } from '@/stores/transaction.store';
+import { Colors } from '@/constants/colors';
+
+export default function ArchivedTransactionsScreen() {
+  const { data, isLoading, isError, refetch, isRefetching } = useQuery({
+    queryKey: ['transactions-archived'],
+    queryFn: () => api.get<Transaction[]>('/transactions/archived').then((r) => r.data),
+  });
+
+  return (
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Text style={styles.backText}>←</Text>
+        </TouchableOpacity>
+        <Text style={styles.title}>Archivadas</Text>
+        <View style={{ minWidth: 32 }} />
+      </View>
+
+      {isLoading && (
+        <View style={styles.center}>
+          <ActivityIndicator color={Colors.primary} size="large" />
+        </View>
+      )}
+
+      {isError && (
+        <View style={styles.center}>
+          <Text style={styles.errorText}>No se pudo cargar. Intenta de nuevo.</Text>
+          <TouchableOpacity onPress={() => refetch()} style={styles.retryBtn}>
+            <Text style={styles.retryText}>Reintentar</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {!isLoading && !isError && (
+        <FlatList
+          data={data ?? []}
+          keyExtractor={(tx) => tx.id}
+          renderItem={({ item }) => <TransactionCard tx={item} />}
+          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={Colors.primary} />}
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <Text style={styles.emptyEmoji}>🗂️</Text>
+              <Text style={styles.emptyTitle}>Sin transacciones archivadas</Text>
+              <Text style={styles.emptySubtitle}>Las transacciones completadas o canceladas que archives aparecerán aquí</Text>
+            </View>
+          }
+          contentContainerStyle={data?.length === 0 ? styles.emptyContainer : { paddingVertical: 8 }}
+        />
+      )}
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container:      { flex: 1, backgroundColor: Colors.background },
+  header:         { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: Colors.border, backgroundColor: Colors.surface },
+  backBtn:        { minWidth: 32 },
+  backText:       { fontSize: 22, color: Colors.primary },
+  title:          { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '700', color: Colors.textPrimary },
+  center:         { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
+  errorText:      { color: Colors.textSecondary, fontSize: 15 },
+  retryBtn:       { backgroundColor: Colors.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
+  retryText:      { color: '#fff', fontWeight: '600' },
+  emptyContainer: { flex: 1 },
+  empty:          { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 10, paddingTop: 80, paddingHorizontal: 32 },
+  emptyEmoji:     { fontSize: 48 },
+  emptyTitle:     { fontSize: 18, fontWeight: '700', color: Colors.textPrimary },
+  emptySubtitle:  { fontSize: 14, color: Colors.textSecondary, textAlign: 'center' },
+});

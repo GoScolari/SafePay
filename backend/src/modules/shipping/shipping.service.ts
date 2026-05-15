@@ -89,7 +89,16 @@ export class ShippingService {
     tx.status = TxStatus.EN_TRANSITO;
     await this.txRepo.save(tx);
 
-    // TODO: notify TX_SHIPPED al comprador
+    const buyerId = tx.initiatorRole === TxRole.SELLER ? tx.counterpartId : tx.initiatorId;
+    if (buyerId) {
+      void this.notificationsService.notify({
+        userId: buyerId,
+        type: NotificationType.TX_SHIPPED,
+        title: 'Tu pedido está en camino',
+        body: `"${tx.description}" fue despachado por ${dto.courier} (${dto.trackingNumber}).`,
+        transactionId: tx.id,
+      });
+    }
 
     void this.pollSingleShipment(shipment);
 

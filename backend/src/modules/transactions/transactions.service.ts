@@ -5,11 +5,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan } from 'typeorm';
+import { Repository, LessThan, IsNull } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import * as crypto from 'crypto';
 import { Transaction } from '../../database/entities/transaction.entity';
-import { TxStatus } from '../../common/enums';
+import { TxModality, TxRole, TxStatus } from '../../common/enums';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 
 @Injectable()
@@ -49,9 +49,21 @@ export class TransactionsService {
     return tx;
   }
 
+  async findArchivedByUser(userId: string): Promise<Transaction[]> {
+    return this.txRepo
+      .createQueryBuilder('tx')
+      .where('tx.archived_at IS NOT NULL')
+      .andWhere('(tx.initiator_id = :userId OR tx.counterpart_id = :userId)', { userId })
+      .orderBy('tx.archived_at', 'DESC')
+      .getMany();
+  }
+
   async findByUser(userId: string): Promise<Transaction[]> {
     return this.txRepo.find({
-      where: [{ initiatorId: userId }, { counterpartId: userId }],
+      where: [
+        { initiatorId: userId, archivedAt: IsNull() },
+        { counterpartId: userId, archivedAt: IsNull() },
+      ],
       order: { createdAt: 'DESC' },
     });
   }
@@ -93,6 +105,40 @@ export class TransactionsService {
     tx.acceptedAt = new Date();
     await this.txRepo.save(tx);
     return this.findById(id);
+  }
+
+  async archive(id: string, userId: string): Promise<Transaction> {
+    const tx = await this.findById(id);
+
+    if (tx.initiatorId !== userId && tx.counterpartId !== userId) {
+      throw new ForbiddenException('No tenés permiso para archivar esta transacción');
+    }
+    const archivableStatuses: TxStatus[] = [TxStatus.COMPLETADO, TxStatus.CANCELADO, TxStatus.EXPIRADO, TxStatus.REEMBOLSADO];
+    if (!archivableStatuses.includes(tx.status)) {
+      throw new BadRequestException('Solo se pueden archivar transacciones completadas, canceladas, expiradas o reembolsadas');
+    }
+
+    tx.archivedAt = new Date();
+    return this.txRepo.save(tx);
+  }
+
+  async deliver(id: string, userId: string): Promise<Transaction> {
+    const tx = await this.findById(id);
+
+    if (tx.modality !== TxModality.PRESENTIAL) {
+      throw new BadRequestException('Este endpoint solo aplica a transacciones presenciales');
+    }
+    if (tx.status !== TxStatus.PAGADO) {
+      throw new BadRequestException('Solo se puede confirmar entrega en una transacción PAGADO');
+    }
+    const sellerId = tx.initiatorRole === TxRole.SELLER ? tx.initiatorId : tx.counterpartId;
+    if (sellerId !== userId) {
+      throw new ForbiddenException('Solo el vendedor puede confirmar la entrega presencial');
+    }
+
+    tx.status = TxStatus.ENTREGADO;
+    tx.autoReleaseAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
+    return this.txRepo.save(tx);
   }
 
   async cancel(id: string, userId: string): Promise<Transaction> {

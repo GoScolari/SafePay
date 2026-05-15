@@ -12,7 +12,7 @@ export interface Transaction {
   initiatorId: string;
   initiatorRole: 'seller' | 'buyer';
   counterpartId: string | null;
-  modality: 'shipping' | 'in_person';
+  modality: 'shipping' | 'presential';
   expiresAt: string;
   createdAt: string;
   initiator?: { fullName: string };

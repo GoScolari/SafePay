@@ -1,5 +1,7 @@
-import { Tabs } from 'expo-router';
+import { Tabs, router } from 'expo-router';
+import { useEffect } from 'react';
 import { useNotificationStore } from '@/stores/notification.store';
+import { useAuthStore } from '@/stores/auth.store';
 import { Colors } from '@/constants/colors';
 import { View, Text, StyleSheet } from 'react-native';
 
@@ -13,7 +15,16 @@ function Badge({ count }: { count: number }) {
 }
 
 export default function AppLayout() {
-  const unreadCount = useNotificationStore((s) => s.unreadCount);
+  const unreadCount  = useNotificationStore((s) => s.unreadCount);
+  const pendingTxId  = useAuthStore((s) => s.pendingTxId);
+  const setPendingTx = useAuthStore((s) => s.setPendingTx);
+
+  useEffect(() => {
+    if (pendingTxId) {
+      setPendingTx(null);
+      router.push(`/(app)/transactions/${pendingTxId}` as never);
+    }
+  }, []);
 
   return (
     <Tabs
@@ -46,6 +57,7 @@ export default function AppLayout() {
         options={{ title: 'Perfil', tabBarIcon: ({ color }) => <TabIcon emoji="👤" color={color} /> }}
       />
       {/* Pantallas sin tab */}
+      <Tabs.Screen name="transactions/archived"  options={{ href: null }} />
       <Tabs.Screen name="transactions/new"      options={{ href: null }} />
       <Tabs.Screen name="transactions/[id]"     options={{ href: null }} />
       <Tabs.Screen name="transactions/pay"      options={{ href: null }} />

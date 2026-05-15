@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet } from 'react-native';
-import { TxStatus, TX_STATUS_LABEL, TX_STATUS_COLOR, TX_STATUS_FLOW } from '@/constants/txStatus';
+import { TxStatus, TX_STATUS_LABEL, TX_STATUS_COLOR, TX_STATUS_FLOW_SHIPPING, TX_STATUS_FLOW_PRESENTIAL } from '@/constants/txStatus';
 import { Colors } from '@/constants/colors';
 
 const SPECIAL: Partial<Record<TxStatus, { emoji: string; label: string; color: string }>> = {
@@ -9,7 +9,7 @@ const SPECIAL: Partial<Record<TxStatus, { emoji: string; label: string; color: s
   EXPIRADO:    { emoji: '⏰', label: 'Expirada',   color: Colors.textMuted },
 };
 
-export function StatusStepper({ status }: { status: TxStatus }) {
+export function StatusStepper({ status, modality = 'shipping' }: { status: TxStatus; modality?: 'shipping' | 'presential' }) {
   const special = SPECIAL[status];
 
   if (special) {
@@ -21,11 +21,12 @@ export function StatusStepper({ status }: { status: TxStatus }) {
     );
   }
 
-  const currentIndex = TX_STATUS_FLOW.indexOf(status);
+  const flow = modality === 'presential' ? TX_STATUS_FLOW_PRESENTIAL : TX_STATUS_FLOW_SHIPPING;
+  const currentIndex = flow.indexOf(status);
 
   return (
     <View style={styles.container}>
-      {TX_STATUS_FLOW.map((s, i) => {
+      {flow.map((s, i) => {
         const done    = i < currentIndex;
         const active  = i === currentIndex;
         const pending = i > currentIndex;
@@ -34,7 +35,7 @@ export function StatusStepper({ status }: { status: TxStatus }) {
         return (
           <View key={s} style={styles.step}>
             {/* Conector izquierdo */}
-            {i > 0 && <View style={[styles.line, { backgroundColor: done ? TX_STATUS_COLOR[TX_STATUS_FLOW[i - 1]] : Colors.border }]} />}
+            {i > 0 && <View style={[styles.line, { backgroundColor: done ? TX_STATUS_COLOR[flow[i - 1]] : Colors.border }]} />}
 
             <View style={styles.dotWrapper}>
               <View style={[styles.dot, { backgroundColor: color, transform: [{ scale: active ? 1.25 : 1 }] }]}>

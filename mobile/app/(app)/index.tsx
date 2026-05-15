@@ -28,9 +28,14 @@ export default function HomeScreen() {
           <Text style={styles.greeting}>Hola, {user?.fullName?.split(' ')[0]} 👋</Text>
           <Text style={styles.subtitle}>Tus transacciones</Text>
         </View>
-        <TouchableOpacity style={styles.newBtn} onPress={() => router.push('/(app)/transactions/new')}>
-          <Text style={styles.newBtnText}>+ Nueva</Text>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity style={styles.archiveBtn} onPress={() => router.push('/(app)/transactions/archived' as never)}>
+            <Text style={styles.archiveBtnText}>🗂️</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.newBtn} onPress={() => router.push('/(app)/transactions/new')}>
+            <Text style={styles.newBtnText}>+ Nueva</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {isLoading && (
@@ -74,6 +79,9 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container:      { flex: 1, backgroundColor: Colors.background },
   header:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 16 },
+  headerActions:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  archiveBtn:     { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  archiveBtnText: { fontSize: 16 },
   greeting:       { fontSize: 20, fontWeight: '700', color: Colors.textPrimary },
   subtitle:       { fontSize: 13, color: Colors.textSecondary, marginTop: 2 },
   newBtn:         { backgroundColor: Colors.primary, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },

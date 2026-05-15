@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Get,
+  Patch,
   Param,
   Body,
   UseGuards,
@@ -29,6 +30,12 @@ export class TransactionsController {
     return this.transactionsService.findByUser(user.id);
   }
 
+  @Get('archived')
+  @UseGuards(JwtAuthGuard)
+  getArchivedTransactions(@CurrentUser() user: { id: string }) {
+    return this.transactionsService.findArchivedByUser(user.id);
+  }
+
   @Get(':id')
   @UseGuards(JwtAuthGuard)
   findOne(@Param('id') id: string) {
@@ -47,6 +54,20 @@ export class TransactionsController {
   @UseGuards(JwtAuthGuard)
   cancel(@Param('id') id: string, @CurrentUser() user: { id: string }) {
     return this.transactionsService.cancel(id, user.id);
+  }
+
+  @Post(':id/deliver')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  deliver(@Param('id') id: string, @CurrentUser() user: { id: string }) {
+    return this.transactionsService.deliver(id, user.id);
+  }
+
+  @Patch(':id/archive')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  archive(@Param('id') id: string, @CurrentUser() user: { id: string }) {
+    return this.transactionsService.archive(id, user.id);
   }
 
   @Get('public/:slug')

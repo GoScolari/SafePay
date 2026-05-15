@@ -22,7 +22,7 @@ const FEE_PAYER_LABEL: Record<string, string> = {
 export default function TransactionDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const userId  = useAuthStore((s) => s.user?.id);
-  const { tx, isLoading, isError, refetch, accept, accepting, cancel, cancelling, releasePayment, releasing, devDeliver, delivering, copyLink } = useTransaction(id);
+  const { tx, isLoading, isError, refetch, accept, accepting, cancel, cancelling, releasePayment, releasing, deliver, delivering, devDeliver, devDelivering, archive, archiving, copyLink } = useTransaction(id);
 
   if (isLoading) {
     return <View style={styles.center}><ActivityIndicator color={Colors.primary} size="large" /></View>;
@@ -94,6 +94,25 @@ export default function TransactionDetailScreen() {
 
     if (status === 'PAGADO') {
       if (isSeller) {
+        if (tx.modality === 'presential') {
+          return (
+            <View style={styles.actions}>
+              <ActionButton
+                label="Confirmar entrega presencial"
+                onPress={() => Alert.alert(
+                  'Confirmar entrega',
+                  '¿Confirmás que entregaste el artículo en mano al comprador?',
+                  [
+                    { text: 'No', style: 'cancel' },
+                    { text: 'Sí, entreguei', onPress: () => deliver() },
+                  ],
+                )}
+                loading={delivering}
+              />
+              <ActionButton label="Cancelar" onPress={confirmCancel} loading={cancelling} variant="danger" />
+            </View>
+          );
+        }
         return (
           <View style={styles.actions}>
             <ActionButton label="Registrar envío" onPress={() => router.push(`/(app)/transactions/tracking?txId=${tx.id}`)} />
@@ -110,8 +129,8 @@ export default function TransactionDetailScreen() {
           <TouchableOpacity onPress={() => router.push(`/(app)/transactions/tracking?txId=${tx.id}`)} style={styles.infoBox}>
             <Text style={styles.infoText}>📦 Ver estado del envío</Text>
           </TouchableOpacity>
-          {isSeller && (
-            <ActionButton label="🧪 Simular entrega" onPress={() => devDeliver()} loading={delivering} variant="outline" />
+          {isSeller && tx.modality !== 'presential' && (
+            <ActionButton label="🧪 Simular entrega" onPress={() => devDeliver()} loading={devDelivering} variant="outline" />
           )}
         </View>
       );
@@ -130,6 +149,20 @@ export default function TransactionDetailScreen() {
         <View style={styles.infoBox}>
           <Text style={styles.infoText}>⏳ Esperando que el comprador confirme la recepción</Text>
         </View>
+      );
+    }
+
+    if (status === 'COMPLETADO' || status === 'CANCELADO' || status === 'EXPIRADO' || status === 'REEMBOLSADO') {
+      return (
+        <ActionButton
+          label="Archivar"
+          onPress={() => Alert.alert('Archivar transacción', 'Esta transacción dejará de aparecer en tu lista.', [
+            { text: 'Cancelar', style: 'cancel' },
+            { text: 'Archivar', onPress: () => archive() },
+          ])}
+          loading={archiving}
+          variant="outline"
+        />
       );
     }
 
@@ -162,7 +195,7 @@ export default function TransactionDetailScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         {/* Estado */}
         <View style={styles.section}>
-          <StatusStepper status={tx.status as TxStatus} />
+          <StatusStepper status={tx.status as TxStatus} modality={tx.modality} />
         </View>
 
         {/* Info principal */}

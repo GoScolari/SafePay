@@ -36,11 +36,12 @@ export const TX_STATUS_COLOR: Record<TxStatus, string> = {
   EXPIRADO:    '#9CA3AF',
 };
 
-export const TX_STATUS_FLOW: TxStatus[] = [
-  'PROPUESTA',
-  'CONFIRMADA',
-  'PAGADO',
-  'EN_TRANSITO',
-  'ENTREGADO',
-  'COMPLETADO',
+export const TX_STATUS_FLOW_SHIPPING: TxStatus[] = [
+  'PROPUESTA', 'CONFIRMADA', 'PAGADO', 'EN_TRANSITO', 'ENTREGADO', 'COMPLETADO',
 ];
+
+export const TX_STATUS_FLOW_PRESENTIAL: TxStatus[] = [
+  'PROPUESTA', 'CONFIRMADA', 'PAGADO', 'ENTREGADO', 'COMPLETADO',
+];
+
+export const TX_STATUS_FLOW = TX_STATUS_FLOW_SHIPPING;

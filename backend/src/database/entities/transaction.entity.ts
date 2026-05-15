@@ -71,6 +71,9 @@ export class Transaction {
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
+  @Column({ name: 'archived_at', type: 'timestamptz', nullable: true })
+  archivedAt: Date | null;
+
   @ManyToOne(() => User, (u) => u.initiatedTransactions)
   @JoinColumn({ name: 'initiator_id' })
   initiator: User;

@@ -91,7 +91,7 @@ export default function TrackingScreen() {
             <View style={[styles.statusDot, { backgroundColor: color }]} />
           </View>
           <View style={styles.section}>
-            <DetailRow label="Courier"          value={COURIER_LABEL[shipment.courier]} />
+            <DetailRow label="Courier"          value={COURIER_LABEL[shipment.courier as Courier] ?? shipment.courier} />
             <DetailRow label="Número de tracking" value={shipment.trackingNumber} />
             {shipment.rawStatus && <DetailRow label="Estado courier" value={shipment.rawStatus} />}
             {shipment.lastCheckedAt && <DetailRow label="Última consulta" value={formatDate(shipment.lastCheckedAt)} />}
