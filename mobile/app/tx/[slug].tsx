@@ -3,7 +3,6 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { WebView } from 'react-native-webview';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
@@ -22,9 +21,7 @@ export default function TxPublicScreen() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
-  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
-  const [showWebView, setShowWebView] = useState(false);
-  const [initiating, setInitiating]   = useState(false);
+  const [initiating, setInitiating] = useState(false);
 
   const { data: tx, isLoading, isError } = useQuery<Transaction>({
     queryKey: ['tx-public', slug],
@@ -52,18 +49,22 @@ export default function TxPublicScreen() {
     );
   }
 
-  if (tx.status !== 'CONFIRMADA') {
-    const STATUS_MSG: Record<string, { emoji: string; msg: string }> = {
-      PROPUESTA:   { emoji: '⏳', msg: 'Esta transacción aún no fue aceptada por ambas partes.' },
-      PAGADO:      { emoji: '💰', msg: 'Esta transacción ya fue pagada.' },
-      EN_TRANSITO: { emoji: '📦', msg: 'El artículo está en camino.' },
-      ENTREGADO:   { emoji: '🏠', msg: 'El artículo fue entregado.' },
-      COMPLETADO:  { emoji: '🎉', msg: 'Esta transacción fue completada.' },
-      CANCELADO:   { emoji: '✖️', msg: 'Esta transacción fue cancelada.' },
-      EN_DISPUTA:  { emoji: '⚠️', msg: 'Esta transacción está en disputa.' },
-      REEMBOLSADO: { emoji: '↩️', msg: 'Esta transacción fue reembolsada.' },
-      EXPIRADO:    { emoji: '⏰', msg: 'Esta transacción expiró.' },
-    };
+  // Determinar acción según estado
+  const canConfirm = tx.status === 'PROPUESTA' && tx.initiatorRole === 'seller';
+  const STATUS_MSG: Record<string, { emoji: string; msg: string }> = {
+    PROPUESTA:   { emoji: '⏳', msg: 'El vendedor aún no aceptó esta propuesta.' },
+    CONFIRMADA:  { emoji: '✅', msg: 'Transacción confirmada. Ingresá a la app para pagar.' },
+    PAGADO:      { emoji: '💰', msg: 'Esta transacción ya fue pagada.' },
+    EN_TRANSITO: { emoji: '📦', msg: 'El artículo está en camino.' },
+    ENTREGADO:   { emoji: '🏠', msg: 'El artículo fue entregado.' },
+    COMPLETADO:  { emoji: '🎉', msg: 'Esta transacción fue completada.' },
+    CANCELADO:   { emoji: '✖️', msg: 'Esta transacción fue cancelada.' },
+    EN_DISPUTA:  { emoji: '⚠️', msg: 'Esta transacción está en disputa.' },
+    REEMBOLSADO: { emoji: '↩️', msg: 'Esta transacción fue reembolsada.' },
+    EXPIRADO:    { emoji: '⏰', msg: 'Esta transacción expiró.' },
+  };
+
+  if (!canConfirm) {
     const info = STATUS_MSG[tx.status] ?? { emoji: '❓', msg: 'Estado desconocido.' };
     return (
       <View style={styles.center}>
@@ -73,72 +74,21 @@ export default function TxPublicScreen() {
     );
   }
 
-  const handlePay = async () => {
+  const handleConfirm = async () => {
     setInitiating(true);
     try {
-      const r = await api.post<{ checkoutUrl: string | null; paymentId: string }>(
-        '/payments/initiate',
-        { transactionId: tx.id },
-      );
-      if (r.data.checkoutUrl) {
-        setCheckoutUrl(r.data.checkoutUrl);
-        setShowWebView(true);
+      await api.post(`/transactions/${tx.id}/accept`);
+      if (!isAuthenticated) {
+        router.replace('/(auth)/login' as never);
       } else {
-        // Modo dev — simular
-        setShowWebView(true);
+        router.replace(`/(app)/transactions/${tx.id}` as never);
       }
     } catch {
-      // Si no está autenticado el backend rechazará; redirigimos al login
       router.push(`/(auth)/login` as never);
     } finally {
       setInitiating(false);
     }
   };
-
-  const handleWebViewNav = (url: string) => {
-    if (url.includes('safepay://') || url.includes('/success') || url.includes('status=approved')) {
-      setShowWebView(false);
-      if (!isAuthenticated) {
-        router.replace('/(auth)/register' as never);
-      } else {
-        router.replace(`/(app)/transactions/${tx.id}` as never);
-      }
-    } else if (url.includes('/failure') || url.includes('status=rejected') || url.includes('status=cancelled')) {
-      setShowWebView(false);
-    }
-  };
-
-  if (showWebView) {
-    return (
-      <SafeAreaView style={styles.fullScreen} edges={['top']}>
-        <View style={styles.wvHeader}>
-          <TouchableOpacity onPress={() => setShowWebView(false)} style={styles.backBtn}>
-            <Text style={styles.backText}>✖</Text>
-          </TouchableOpacity>
-          <Text style={styles.wvTitle}>Pago seguro</Text>
-          <View style={{ minWidth: 32 }} />
-        </View>
-        {checkoutUrl ? (
-          <WebView
-            source={{ uri: checkoutUrl }}
-            onNavigationStateChange={(s) => handleWebViewNav(s.url)}
-            startInLoadingState
-            renderLoading={() => <View style={styles.center}><ActivityIndicator color={Colors.primary} /></View>}
-            style={{ flex: 1 }}
-          />
-        ) : (
-          <View style={styles.center}>
-            <Text style={styles.errorEmoji}>🧪</Text>
-            <Text style={styles.errorTitle}>Modo desarrollo</Text>
-            <Text style={styles.errorSub}>Mercado Pago no está configurado.</Text>
-            <TouchableOpacity style={[styles.payBtn, { marginTop: 24 }]} onPress={() => handleWebViewNav('/success')}>
-              <Text style={styles.payBtnText}>✅ Simular pago exitoso</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </SafeAreaView>
-    );
-  }
 
   const buyerTotal = tx.feePayer === 'buyer' ? tx.amount + tx.fee
     : tx.feePayer === 'split' ? tx.amount + Math.ceil(tx.fee / 2)
@@ -159,7 +109,7 @@ export default function TxPublicScreen() {
         </View>
 
         <View style={styles.section}>
-          <DetailRow label="Vendedor"   value={tx.initiatorRole === 'seller' ? (tx.initiator?.fullName ?? '—') : (tx.counterpart?.fullName ?? '—')} />
+          <DetailRow label="Vendedor"   value={(tx as any).initiatorName ?? tx.initiator?.fullName ?? '—'} />
           <DetailRow label="Comisión"   value={`${formatCLP(tx.fee)} — ${FEE_PAYER_LABEL[tx.feePayer]}`} />
           <DetailRow label="Modalidad"  value={tx.modality === 'shipping' ? '📦 Con envío' : '🤝 Presencial'} />
         </View>
@@ -174,12 +124,12 @@ export default function TxPublicScreen() {
       <View style={styles.footer}>
         <TouchableOpacity
           style={[styles.payBtn, initiating && styles.payBtnDisabled]}
-          onPress={handlePay}
+          onPress={handleConfirm}
           disabled={initiating}
         >
           {initiating
             ? <ActivityIndicator color="#fff" />
-            : <Text style={styles.payBtnText}>Pagar con Mercado Pago</Text>
+            : <Text style={styles.payBtnText}>Confirmar transacción</Text>
           }
         </TouchableOpacity>
       </View>

@@ -17,6 +17,8 @@ export interface Transaction {
   createdAt: string;
   initiator?: { fullName: string };
   counterpart?: { fullName: string } | null;
+  payment?: { id: string; status: string } | null;
+  dispute?: { id: string; status: string; reason: string } | null;
 }
 
 interface TransactionState {

@@ -1,5 +1,7 @@
 import * as Clipboard from 'expo-clipboard';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useFocusEffect } from 'expo-router';
+import { useCallback } from 'react';
 import { api } from '@/lib/api';
 import { Transaction } from '@/stores/transaction.store';
 
@@ -10,7 +12,10 @@ export function useTransaction(id: string) {
     queryKey: ['transaction', id],
     queryFn: () => api.get<Transaction>(`/transactions/${id}`).then((r) => r.data),
     enabled: !!id,
+    staleTime: 0,
   });
+
+  useFocusEffect(useCallback(() => { if (id) refetch(); }, [id]));
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['transaction', id] });
@@ -32,10 +37,16 @@ export function useTransaction(id: string) {
     onSuccess: invalidate,
   });
 
+  const { mutate: devDeliver, isPending: delivering } = useMutation({
+    mutationFn: () => api.post(`/shipping/dev-deliver/${id}`),
+    onSuccess: invalidate,
+  });
+
   const copyLink = async () => {
     if (!tx) return;
-    await Clipboard.setStringAsync(`https://safepay.cl/tx/${tx.slug}`);
+    const base = process.env.EXPO_PUBLIC_WEB_URL ?? 'https://safepay.cl';
+    await Clipboard.setStringAsync(`${base}/tx/${tx.slug}`);
   };
 
-  return { tx, isLoading, isError, refetch, accept, accepting, cancel, cancelling, releasePayment, releasing, copyLink };
+  return { tx, isLoading, isError, refetch, accept, accepting, cancel, cancelling, releasePayment, releasing, devDeliver, delivering, copyLink };
 }

@@ -46,6 +46,13 @@ export class PaymentsController {
     return this.paymentsService.refund(id);
   }
 
+  @Post('dev-confirm/:id')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  devConfirm(@Param('id') id: string) {
+    return this.paymentsService.devConfirm(id);
+  }
+
   // Sin JwtAuthGuard — validado internamente con HMAC-SHA256
   @Post('webhook')
   @HttpCode(HttpStatus.OK)

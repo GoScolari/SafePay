@@ -10,11 +10,11 @@ import { api } from '@/lib/api';
 import { Colors } from '@/constants/colors';
 import { formatDate } from '@/lib/utils';
 
-type Courier = 'CHILEXPRESS' | 'BLUEXPRESS';
+type Courier = 'chilexpress' | 'bluexpress';
 type ShipmentStatus = 'PENDING' | 'IN_TRANSIT' | 'DELIVERED' | 'FAILED';
 
 interface ShipmentStatusResponse {
-  courier: Courier;
+  courier: string;
   trackingNumber: string;
   status: ShipmentStatus;
   rawStatus: string | null;
@@ -37,15 +37,15 @@ const STATUS_COLOR: Record<ShipmentStatus, string> = {
 };
 
 const COURIER_LABEL: Record<Courier, string> = {
-  CHILEXPRESS: 'Chilexpress',
-  BLUEXPRESS:  'BlueExpress',
+  chilexpress: 'Chilexpress',
+  bluexpress:  'BlueExpress',
 };
 
 export default function TrackingScreen() {
   const { txId } = useLocalSearchParams<{ txId: string }>();
   const queryClient = useQueryClient();
 
-  const [courier, setCourier]             = useState<Courier>('CHILEXPRESS');
+  const [courier, setCourier]             = useState<Courier>('chilexpress');
   const [trackingNumber, setTrackingNumber] = useState('');
 
   const { data: shipment, isLoading, isError } = useQuery<ShipmentStatusResponse>({
@@ -119,7 +119,7 @@ export default function TrackingScreen() {
           <ScrollView contentContainerStyle={styles.content}>
             <Text style={styles.fieldLabel}>Courier</Text>
             <View style={styles.courierRow}>
-              {(['CHILEXPRESS', 'BLUEXPRESS'] as Courier[]).map((c) => (
+              {(['chilexpress', 'bluexpress'] as Courier[]).map((c) => (
                 <TouchableOpacity
                   key={c}
                   style={[styles.courierCard, courier === c && styles.courierCardActive]}

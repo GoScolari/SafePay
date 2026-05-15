@@ -22,7 +22,7 @@ const FEE_PAYER_LABEL: Record<string, string> = {
 export default function TransactionDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const userId  = useAuthStore((s) => s.user?.id);
-  const { tx, isLoading, isError, refetch, accept, accepting, cancel, cancelling, releasePayment, releasing, copyLink } = useTransaction(id);
+  const { tx, isLoading, isError, refetch, accept, accepting, cancel, cancelling, releasePayment, releasing, devDeliver, delivering, copyLink } = useTransaction(id);
 
   if (isLoading) {
     return <View style={styles.center}><ActivityIndicator color={Colors.primary} size="large" /></View>;
@@ -53,9 +53,8 @@ export default function TransactionDetailScreen() {
     Alert.alert('Confirmar recepción', '¿Recibiste el artículo en buenas condiciones? Esto liberará el pago al vendedor.', [
       { text: 'No, esperar', style: 'cancel' },
       { text: 'Sí, liberar pago', onPress: () => {
-        // El paymentId vendría de tx.payment.id — por ahora llamamos al endpoint de release
-        // En Fase 6 se integra el payment completo; aquí usamos el id de tx como referencia
-        releasePayment(id);
+        const paymentId = tx.payment?.id ?? id;
+        releasePayment(paymentId);
       }},
     ]);
 
@@ -83,7 +82,14 @@ export default function TransactionDetailScreen() {
     }
 
     if (status === 'CONFIRMADA') {
-      return <ActionButton label="Ir a pagar" onPress={() => router.push(`/(app)/transactions/pay?id=${tx.id}`)} />;
+      if (isBuyer) {
+        return <ActionButton label="Ir a pagar" onPress={() => router.push(`/(app)/transactions/pay?id=${tx.id}`)} />;
+      }
+      return (
+        <View style={styles.infoBox}>
+          <Text style={styles.infoText}>⏳ Esperando que el comprador realice el pago</Text>
+        </View>
+      );
     }
 
     if (status === 'PAGADO') {
@@ -100,9 +106,14 @@ export default function TransactionDetailScreen() {
 
     if (status === 'EN_TRANSITO') {
       return (
-        <TouchableOpacity onPress={() => router.push(`/(app)/transactions/tracking?txId=${tx.id}`)} style={styles.infoBox}>
-          <Text style={styles.infoText}>📦 Ver estado del envío</Text>
-        </TouchableOpacity>
+        <View style={styles.actions}>
+          <TouchableOpacity onPress={() => router.push(`/(app)/transactions/tracking?txId=${tx.id}`)} style={styles.infoBox}>
+            <Text style={styles.infoText}>📦 Ver estado del envío</Text>
+          </TouchableOpacity>
+          {isSeller && (
+            <ActionButton label="🧪 Simular entrega" onPress={() => devDeliver()} loading={delivering} variant="outline" />
+          )}
+        </View>
       );
     }
 
@@ -123,8 +134,13 @@ export default function TransactionDetailScreen() {
     }
 
     if (status === 'EN_DISPUTA') {
+      const disputeId = (tx as any).dispute?.id;
       return (
-        <ActionButton label="Ver disputa" onPress={() => router.push(`/(app)/disputes/${id}`)} variant="outline" />
+        <ActionButton
+          label="Ver disputa"
+          onPress={() => router.push(disputeId ? `/(app)/disputes/${disputeId}` : `/(app)/disputes/${id}`)}
+          variant="outline"
+        />
       );
     }
 

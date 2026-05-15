@@ -324,6 +324,33 @@ export class ShippingService {
     return { rawStatus, mappedStatus: this.mapBlueExpressStatus(resp.data?.status ?? rawStatus) };
   }
 
+  async devDeliver(txId: string): Promise<{ status: string }> {
+    if (process.env.NODE_ENV === 'production') {
+      throw new ForbiddenException('No disponible en producción');
+    }
+    const tx = await this.txRepo.findOne({ where: { id: txId } });
+    if (!tx) throw new NotFoundException('Transacción no encontrada');
+    if (tx.status !== TxStatus.EN_TRANSITO) {
+      throw new BadRequestException(`Estado actual: ${tx.status}`);
+    }
+    const shipment = await this.shipmentRepo.findOne({ where: { transactionId: txId } });
+    if (shipment) {
+      shipment.status = ShipmentStatus.DELIVERED;
+      shipment.deliveredAt = new Date();
+      await this.shipmentRepo.save(shipment);
+    }
+    tx.status = TxStatus.ENTREGADO;
+    await this.txRepo.save(tx);
+    void this.notificationsService.notify({
+      userId: tx.counterpartId ?? tx.initiatorId,
+      type: NotificationType.TX_DELIVERED,
+      title: 'Artículo entregado',
+      body: `"${tx.description}" fue marcado como entregado.`,
+      transactionId: tx.id,
+    });
+    return { status: 'ENTREGADO' };
+  }
+
   private mapBlueExpressStatus(status: string): ShipmentStatus {
     const s = status.toLowerCase().trim();
     if (s === 'delivered')  return ShipmentStatus.DELIVERED;

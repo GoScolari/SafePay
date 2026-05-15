@@ -312,4 +312,30 @@ export class PaymentsService {
         break;
     }
   }
+
+  async devConfirm(paymentId: string): Promise<{ status: string }> {
+    if (process.env.NODE_ENV === 'production') {
+      throw new ForbiddenException('No disponible en producción');
+    }
+    const payment = await this.paymentRepo.findOne({
+      where: { id: paymentId },
+      relations: ['transaction'],
+    });
+    if (!payment) throw new NotFoundException('Payment no encontrado');
+    if (payment.transaction.status !== TxStatus.CONFIRMADA) {
+      throw new BadRequestException(`Estado actual: ${payment.transaction.status}`);
+    }
+    payment.status = PaymentStatus.HELD;
+    await this.paymentRepo.save(payment);
+    payment.transaction.status = TxStatus.PAGADO;
+    await this.txRepo.save(payment.transaction);
+    void this.notificationsService.notify({
+      userId: payment.transaction.initiatorId,
+      type: NotificationType.TX_PAID,
+      title: 'Pago recibido',
+      body: `El pago por "${payment.transaction.description}" fue acreditado.`,
+      transactionId: payment.transaction.id,
+    });
+    return { status: 'PAGADO' };
+  }
 }

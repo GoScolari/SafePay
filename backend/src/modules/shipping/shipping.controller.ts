@@ -39,6 +39,13 @@ export class ShippingController {
     return this.shippingService.getStatus(txId, user.id);
   }
 
+  @Post('dev-deliver/:txId')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  devDeliver(@Param('txId') txId: string) {
+    return this.shippingService.devDeliver(txId);
+  }
+
   // Sin JwtAuthGuard — validado internamente con HMAC-SHA256
   @Post('webhook')
   @HttpCode(HttpStatus.OK)

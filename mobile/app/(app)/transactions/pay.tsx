@@ -31,7 +31,12 @@ export default function PayScreen() {
       .finally(() => setLoading(false));
   }, [id]);
 
-  const handleSuccess = () => {
+  const handleSuccess = async () => {
+    if (paymentId && !checkoutUrl) {
+      try {
+        await api.post(`/payments/dev-confirm/${paymentId}`);
+      } catch { /* ignorar en prod donde no existe el endpoint */ }
+    }
     queryClient.invalidateQueries({ queryKey: ['transaction', id] });
     queryClient.invalidateQueries({ queryKey: ['transactions'] });
     router.replace(`/(app)/transactions/${id}` as never);
