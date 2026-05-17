@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AppController } from './app.controller';
 import { getDataSourceToken } from '@nestjs/typeorm';
+import { TransactionsService } from './modules/transactions/transactions.service';
 
 describe('AppController', () => {
   let appController: AppController;
@@ -12,6 +13,10 @@ describe('AppController', () => {
         {
           provide: getDataSourceToken(),
           useValue: { isInitialized: true },
+        },
+        {
+          provide: TransactionsService,
+          useValue: {},
         },
       ],
     }).compile();

@@ -9,6 +9,7 @@ import { PaymentsService } from './payments.service';
 import { Payment } from '../../database/entities/payment.entity';
 import { Transaction } from '../../database/entities/transaction.entity';
 import { UsersService } from '../users/users.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { FeePayer, PaymentStatus, TxRole, TxStatus } from '../../common/enums';
 
 const makeTx = (overrides: Partial<Transaction> = {}): Transaction =>
@@ -81,6 +82,7 @@ describe('PaymentsService', () => {
         { provide: HttpService,                     useFactory: mockHttp         },
         { provide: ConfigService,                   useFactory: mockConfig       },
         { provide: UsersService,                    useFactory: mockUsersService },
+        { provide: NotificationsService,            useValue: { notify: jest.fn() } },
       ],
     }).compile();
 
@@ -265,6 +267,7 @@ describe('PaymentsService', () => {
           { provide: HttpService,                     useFactory: mockHttp         },
           { provide: ConfigService,                   useValue: configWithSecret   },
           { provide: UsersService,                    useFactory: mockUsersService },
+          { provide: NotificationsService,            useValue: { notify: jest.fn() } },
         ],
       }).compile();
 
@@ -294,6 +297,7 @@ describe('PaymentsService', () => {
           { provide: HttpService,                     useFactory: mockHttp         },
           { provide: ConfigService,                   useValue: configWithSecret   },
           { provide: UsersService,                    useFactory: mockUsersService },
+          { provide: NotificationsService,            useValue: { notify: jest.fn() } },
         ],
       }).compile();
 
