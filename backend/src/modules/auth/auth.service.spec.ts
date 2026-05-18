@@ -133,6 +133,32 @@ describe('AuthService', () => {
         service.verifyOtp({ phone: '+56999999999', code: '000000' }, res),
       ).rejects.toThrow(UnauthorizedException);
     });
+
+    it('lanza UnauthorizedException si Twilio rechaza el OTP', async () => {
+      const user = mockUser();
+      userRepo.findOne.mockResolvedValue(user);
+
+      // Inyectar twilioClient falso directamente sobre la instancia del servicio
+      (service as any).twilioClient = {
+        verify: {
+          v2: {
+            services: () => ({
+              verificationChecks: {
+                create: jest.fn().mockResolvedValue({ status: 'pending' }),
+              },
+            }),
+          },
+        },
+      };
+
+      const res = { cookie: jest.fn() } as any;
+      await expect(
+        service.verifyOtp({ phone: '+56912345678', code: '999999' }, res),
+      ).rejects.toThrow(UnauthorizedException);
+
+      // Limpiar para no afectar otros tests
+      (service as any).twilioClient = undefined;
+    });
   });
 
   // ── logout ────────────────────────────────────────────────────────────────
@@ -172,6 +198,20 @@ describe('AuthService', () => {
       await expect(service.refresh('user-1', 'token-diferente', res)).rejects.toThrow(
         UnauthorizedException,
       );
+    });
+
+    it('emite nuevo accessToken cuando el refreshToken es válido', async () => {
+      const rawToken = 'valid-refresh-token';
+      const hash = require('crypto').createHash('sha256').update(rawToken).digest('hex');
+      const user = { ...mockUser(), refreshToken: hash };
+      userRepo.findOne.mockResolvedValue(user);
+      userRepo.save.mockResolvedValue(user);
+
+      const res = { cookie: jest.fn() } as any;
+      const result = await service.refresh('user-1', rawToken, res);
+
+      expect(result.accessToken).toBe('jwt-token');
+      expect(res.cookie).toHaveBeenCalledWith('refresh_token', expect.any(String), expect.any(Object));
     });
   });
 });

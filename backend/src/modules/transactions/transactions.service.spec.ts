@@ -25,11 +25,12 @@ const makeTx = (overrides: Partial<Transaction> = {}): Transaction =>
   }) as Transaction;
 
 const mockRepo = () => ({
-  findOne: jest.fn(),
-  find:    jest.fn(),
-  create:  jest.fn(),
-  save:    jest.fn(),
-  update:  jest.fn(),
+  findOne:          jest.fn(),
+  find:             jest.fn(),
+  create:           jest.fn(),
+  save:             jest.fn(),
+  update:           jest.fn(),
+  createQueryBuilder: jest.fn(),
 });
 
 describe('TransactionsService', () => {
@@ -166,6 +167,193 @@ describe('TransactionsService', () => {
       txRepo.findOne.mockResolvedValue(makeTx({ initiatorId: 'user-seller' }));
 
       await expect(service.accept('tx-1', 'user-seller')).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  // ── findByUser ────────────────────────────────────────────────────────────
+
+  describe('findByUser', () => {
+    it('retorna transacciones activas del usuario como iniciador y contraparte', async () => {
+      const txs = [makeTx({ initiatorId: 'user-1' }), makeTx({ counterpartId: 'user-1' })];
+      txRepo.find.mockResolvedValue(txs);
+
+      const result = await service.findByUser('user-1');
+
+      expect(result).toHaveLength(2);
+      expect(txRepo.find).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.arrayContaining([
+          expect.objectContaining({ initiatorId: 'user-1' }),
+        ]),
+      }));
+    });
+
+    it('retorna array vacío si no hay transacciones activas', async () => {
+      txRepo.find.mockResolvedValue([]);
+
+      const result = await service.findByUser('user-1');
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  // ── findArchivedByUser ────────────────────────────────────────────────────
+
+  describe('findArchivedByUser', () => {
+    it('retorna transacciones archivadas del usuario', async () => {
+      const qb = {
+        where:    jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy:  jest.fn().mockReturnThis(),
+        getMany:  jest.fn().mockResolvedValue([makeTx({ archivedAt: new Date() })]),
+      };
+      txRepo.createQueryBuilder.mockReturnValue(qb);
+
+      const result = await service.findArchivedByUser('user-1');
+
+      expect(result).toHaveLength(1);
+      expect(qb.where).toHaveBeenCalledWith(expect.stringContaining('archived_at IS NOT NULL'));
+    });
+
+    it('retorna array vacío si no hay archivadas', async () => {
+      const qb = {
+        where:    jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy:  jest.fn().mockReturnThis(),
+        getMany:  jest.fn().mockResolvedValue([]),
+      };
+      txRepo.createQueryBuilder.mockReturnValue(qb);
+
+      const result = await service.findArchivedByUser('user-1');
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  // ── archive ───────────────────────────────────────────────────────────────
+
+  describe('archive', () => {
+    it('archiva una transacción en estado COMPLETADO', async () => {
+      const tx = makeTx({ status: TxStatus.COMPLETADO, initiatorId: 'user-1' });
+      txRepo.findOne.mockResolvedValue(tx);
+      txRepo.save.mockImplementation((t) => Promise.resolve({ ...t }));
+
+      const result = await service.archive('tx-1', 'user-1');
+
+      expect(result.archivedAt).toBeDefined();
+    });
+
+    it.each([TxStatus.CANCELADO, TxStatus.EXPIRADO, TxStatus.REEMBOLSADO])(
+      'archiva una transacción en estado %s',
+      async (status) => {
+        txRepo.findOne.mockResolvedValue(makeTx({ status, initiatorId: 'user-1' }));
+        txRepo.save.mockImplementation((t) => Promise.resolve({ ...t }));
+
+        const result = await service.archive('tx-1', 'user-1');
+
+        expect(result.archivedAt).toBeDefined();
+      },
+    );
+
+    it('lanza ForbiddenException si el usuario no pertenece a la tx', async () => {
+      txRepo.findOne.mockResolvedValue(makeTx({ status: TxStatus.COMPLETADO, initiatorId: 'user-seller', counterpartId: 'user-buyer' }));
+
+      await expect(service.archive('tx-1', 'ajeno')).rejects.toThrow(ForbiddenException);
+    });
+
+    it('lanza BadRequestException si la tx está en estado no archivable', async () => {
+      txRepo.findOne.mockResolvedValue(makeTx({ status: TxStatus.PAGADO, initiatorId: 'user-1' }));
+
+      await expect(service.archive('tx-1', 'user-1')).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  // ── deliver ───────────────────────────────────────────────────────────────
+
+  describe('deliver', () => {
+    it('transición PAGADO → ENTREGADO en tx presencial (vendedor=iniciador)', async () => {
+      const tx = makeTx({
+        status:        TxStatus.PAGADO,
+        modality:      TxModality.PRESENTIAL,
+        initiatorId:   'user-seller',
+        initiatorRole: TxRole.SELLER,
+      });
+      txRepo.findOne.mockResolvedValue(tx);
+      txRepo.save.mockImplementation((t) => Promise.resolve({ ...t }));
+
+      const result = await service.deliver('tx-1', 'user-seller');
+
+      expect(result.status).toBe(TxStatus.ENTREGADO);
+      expect(result.autoReleaseAt).toBeDefined();
+    });
+
+    it('transición PAGADO → ENTREGADO en tx presencial (vendedor=contraparte)', async () => {
+      const tx = makeTx({
+        status:        TxStatus.PAGADO,
+        modality:      TxModality.PRESENTIAL,
+        initiatorId:   'user-buyer',
+        counterpartId: 'user-seller',
+        initiatorRole: TxRole.BUYER,
+      });
+      txRepo.findOne.mockResolvedValue(tx);
+      txRepo.save.mockImplementation((t) => Promise.resolve({ ...t }));
+
+      const result = await service.deliver('tx-1', 'user-seller');
+
+      expect(result.status).toBe(TxStatus.ENTREGADO);
+    });
+
+    it('lanza BadRequestException si la modalidad no es presencial', async () => {
+      txRepo.findOne.mockResolvedValue(makeTx({ status: TxStatus.PAGADO, modality: TxModality.SHIPPING }));
+
+      await expect(service.deliver('tx-1', 'user-seller')).rejects.toThrow(BadRequestException);
+    });
+
+    it('lanza BadRequestException si el status no es PAGADO', async () => {
+      txRepo.findOne.mockResolvedValue(makeTx({ status: TxStatus.CONFIRMADA, modality: TxModality.PRESENTIAL }));
+
+      await expect(service.deliver('tx-1', 'user-seller')).rejects.toThrow(BadRequestException);
+    });
+
+    it('lanza ForbiddenException si quien confirma no es el vendedor', async () => {
+      const tx = makeTx({
+        status:        TxStatus.PAGADO,
+        modality:      TxModality.PRESENTIAL,
+        initiatorId:   'user-seller',
+        initiatorRole: TxRole.SELLER,
+      });
+      txRepo.findOne.mockResolvedValue(tx);
+
+      await expect(service.deliver('tx-1', 'user-buyer')).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  // ── expireProposals (cron) ────────────────────────────────────────────────
+
+  describe('expireProposals (cron)', () => {
+    it('actualiza a EXPIRADO las propuestas vencidas', async () => {
+      txRepo.update.mockResolvedValue({ affected: 2 });
+
+      await service.expireProposals();
+
+      expect(txRepo.update).toHaveBeenCalledWith(
+        expect.objectContaining({ status: TxStatus.PROPUESTA }),
+        { status: TxStatus.EXPIRADO },
+      );
+    });
+  });
+
+  // ── autoRelease (cron) ────────────────────────────────────────────────────
+
+  describe('autoRelease (cron)', () => {
+    it('actualiza a COMPLETADO las transacciones entregadas con autoReleaseAt vencido', async () => {
+      txRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.autoRelease();
+
+      expect(txRepo.update).toHaveBeenCalledWith(
+        expect.objectContaining({ status: TxStatus.ENTREGADO }),
+        { status: TxStatus.COMPLETADO },
+      );
     });
   });
 
