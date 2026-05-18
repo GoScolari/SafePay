@@ -8,11 +8,18 @@ import { Transaction } from '@/stores/transaction.store';
 export function useTransaction(id: string) {
   const queryClient = useQueryClient();
 
+  const ACTIVE_STATUSES = ['CONFIRMADA', 'PAGADO', 'EN_TRANSITO', 'ENTREGADO', 'EN_DISPUTA'];
+
   const { data: tx, isLoading, isError, refetch } = useQuery({
     queryKey: ['transaction', id],
     queryFn: () => api.get<Transaction>(`/transactions/${id}`).then((r) => r.data),
     enabled: !!id,
     staleTime: 0,
+    refetchInterval: (query) =>
+      ACTIVE_STATUSES.includes((query.state.data as Transaction | undefined)?.status ?? '')
+        ? 30_000
+        : false,
+    refetchIntervalInBackground: false,
   });
 
   useFocusEffect(useCallback(() => { if (id) refetch(); }, [id]));

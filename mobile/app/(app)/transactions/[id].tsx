@@ -1,5 +1,6 @@
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, RefreshControl } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
+import { useState, useCallback } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTransaction } from '@/hooks/useTransaction';
 import { StatusStepper } from '@/components/StatusStepper';
@@ -23,6 +24,12 @@ export default function TransactionDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const userId  = useAuthStore((s) => s.user?.id);
   const { tx, isLoading, isError, refetch, accept, accepting, cancel, cancelling, releasePayment, releasing, deliver, delivering, devDeliver, devDelivering, archive, archiving, copyLink } = useTransaction(id);
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refetch();
+    setRefreshing(false);
+  }, [refetch]);
 
   if (isLoading) {
     return <View style={styles.center}><ActivityIndicator color={Colors.primary} size="large" /></View>;
@@ -192,7 +199,10 @@ export default function TransactionDetailScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
+      >
         {/* Estado */}
         <View style={styles.section}>
           <StatusStepper status={tx.status as TxStatus} modality={tx.modality} />
