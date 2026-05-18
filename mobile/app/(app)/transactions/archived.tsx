@@ -1,17 +1,33 @@
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl, ScrollView } from 'react-native';
 import { router } from 'expo-router';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '@/lib/api';
 import { TransactionCard } from '@/components/TransactionCard';
 import { Transaction } from '@/stores/transaction.store';
 import { Colors } from '@/constants/colors';
+import { TxStatus } from '@/constants/txStatus';
+
+type Filter = TxStatus | null;
+
+const FILTERS: { label: string; value: Filter }[] = [
+  { label: 'Todas',        value: null },
+  { label: 'Completadas',  value: 'COMPLETADO' },
+  { label: 'Canceladas',   value: 'CANCELADO' },
+  { label: 'Reembolsadas', value: 'REEMBOLSADO' },
+  { label: 'Expiradas',    value: 'EXPIRADO' },
+];
 
 export default function ArchivedTransactionsScreen() {
+  const [filter, setFilter] = useState<Filter>(null);
+
   const { data, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ['transactions-archived'],
     queryFn: () => api.get<Transaction[]>('/transactions/archived').then((r) => r.data),
   });
+
+  const filtered = filter ? (data ?? []).filter((tx) => tx.status === filter) : (data ?? []);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -22,6 +38,25 @@ export default function ArchivedTransactionsScreen() {
         <Text style={styles.title}>Archivadas</Text>
         <View style={{ minWidth: 32 }} />
       </View>
+
+      {/* Filtros */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.filtersRow}
+      >
+        {FILTERS.map((f) => (
+          <TouchableOpacity
+            key={String(f.value)}
+            style={[styles.chip, filter === f.value && styles.chipActive]}
+            onPress={() => setFilter(f.value)}
+          >
+            <Text style={[styles.chipText, filter === f.value && styles.chipTextActive]}>
+              {f.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
 
       {isLoading && (
         <View style={styles.center}>
@@ -40,18 +75,24 @@ export default function ArchivedTransactionsScreen() {
 
       {!isLoading && !isError && (
         <FlatList
-          data={data ?? []}
+          data={filtered}
           keyExtractor={(tx) => tx.id}
           renderItem={({ item }) => <TransactionCard tx={item} />}
-          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={Colors.primary} />}
+          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={Colors.primary} colors={[Colors.primary]} />}
           ListEmptyComponent={
             <View style={styles.empty}>
               <Text style={styles.emptyEmoji}>🗂️</Text>
-              <Text style={styles.emptyTitle}>Sin transacciones archivadas</Text>
-              <Text style={styles.emptySubtitle}>Las transacciones completadas o canceladas que archives aparecerán aquí</Text>
+              <Text style={styles.emptyTitle}>
+                {filter ? 'Sin resultados para este filtro' : 'Sin transacciones archivadas'}
+              </Text>
+              <Text style={styles.emptySubtitle}>
+                {filter
+                  ? 'Probá seleccionando otro filtro'
+                  : 'Las transacciones completadas o canceladas que archives aparecerán aquí'}
+              </Text>
             </View>
           }
-          contentContainerStyle={data?.length === 0 ? styles.emptyContainer : { paddingVertical: 8 }}
+          contentContainerStyle={filtered.length === 0 ? styles.emptyContainer : { paddingVertical: 8 }}
         />
       )}
     </SafeAreaView>
@@ -64,6 +105,11 @@ const styles = StyleSheet.create({
   backBtn:        { minWidth: 32 },
   backText:       { fontSize: 22, color: Colors.primary },
   title:          { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '700', color: Colors.textPrimary },
+  filtersRow:     { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 10, gap: 8 },
+  chip:           { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1.5, borderColor: Colors.border, backgroundColor: Colors.surface },
+  chipActive:     { borderColor: Colors.primary, backgroundColor: Colors.primary },
+  chipText:       { fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
+  chipTextActive: { color: '#fff' },
   center:         { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
   errorText:      { color: Colors.textSecondary, fontSize: 15 },
   retryBtn:       { backgroundColor: Colors.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },

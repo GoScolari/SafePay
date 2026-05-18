@@ -1,4 +1,4 @@
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, SectionList, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -7,6 +7,38 @@ import { TransactionCard } from '@/components/TransactionCard';
 import { Transaction, useTransactionStore } from '@/stores/transaction.store';
 import { Colors } from '@/constants/colors';
 import { useAuthStore } from '@/stores/auth.store';
+
+type Section = { title: string; data: Transaction[] };
+
+function classifyTransactions(txs: Transaction[], userId: string): Section[] {
+  const attention: Transaction[] = [];
+  const inProgress: Transaction[] = [];
+  const recent: Transaction[] = [];
+
+  for (const tx of txs) {
+    const isInitiator   = tx.initiatorId === userId;
+    const isCounterpart = tx.counterpartId === userId;
+    const isBuyer = (isInitiator && tx.initiatorRole === 'buyer') ||
+                    (isCounterpart && tx.initiatorRole === 'seller');
+
+    if (
+      (tx.status === 'PROPUESTA' && isCounterpart) ||
+      (tx.status === 'ENTREGADO' && isBuyer)
+    ) {
+      attention.push(tx);
+    } else if (['CONFIRMADA', 'PAGADO', 'EN_TRANSITO', 'EN_DISPUTA'].includes(tx.status)) {
+      inProgress.push(tx);
+    } else {
+      recent.push(tx);
+    }
+  }
+
+  const sections: Section[] = [];
+  if (attention.length)  sections.push({ title: '⚡ Requieren tu atención', data: attention });
+  if (inProgress.length) sections.push({ title: '🔄 En progreso',           data: inProgress });
+  if (recent.length)     sections.push({ title: '📋 Recientes',             data: recent.slice(0, 5) });
+  return sections;
+}
 
 export default function HomeScreen() {
   const user = useAuthStore((s) => s.user);
@@ -21,12 +53,22 @@ export default function HomeScreen() {
     },
   });
 
+  const sections = data && user?.id ? classifyTransactions(data, user.id) : [];
+  const attentionCount = sections.find((s) => s.title.includes('atención'))?.data.length ?? 0;
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.greeting}>Hola, {user?.fullName?.split(' ')[0]} 👋</Text>
-          <Text style={styles.subtitle}>Tus transacciones</Text>
+          <Text style={styles.greeting}>
+            Hola, {user?.fullName?.split(' ')[0]}
+            {attentionCount > 0 ? ' 👋' : ' 👋'}
+          </Text>
+          <Text style={styles.subtitle}>
+            {attentionCount > 0
+              ? `${attentionCount} ${attentionCount === 1 ? 'transacción requiere' : 'transacciones requieren'} tu atención`
+              : 'Tus transacciones'}
+          </Text>
         </View>
         <View style={styles.headerActions}>
           <TouchableOpacity style={styles.archiveBtn} onPress={() => router.push('/(app)/transactions/archived' as never)}>
@@ -54,22 +96,30 @@ export default function HomeScreen() {
       )}
 
       {!isLoading && !isError && (
-        <FlatList
-          data={data ?? []}
+        <SectionList
+          sections={sections}
           keyExtractor={(tx) => tx.id}
           renderItem={({ item }) => <TransactionCard tx={item} />}
-          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={Colors.primary} />}
+          renderSectionHeader={({ section }) => (
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>{section.title}</Text>
+            </View>
+          )}
+          refreshControl={
+            <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={Colors.primary} colors={[Colors.primary]} />
+          }
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Text style={styles.emptyEmoji}>📦</Text>
-              <Text style={styles.emptyTitle}>Sin transacciones aún</Text>
+              <Text style={styles.emptyEmoji}>🤝</Text>
+              <Text style={styles.emptyTitle}>Todavía no tenés transacciones</Text>
               <Text style={styles.emptySubtitle}>Creá tu primera transacción segura</Text>
               <TouchableOpacity style={styles.emptyBtn} onPress={() => router.push('/(app)/transactions/new')}>
-                <Text style={styles.emptyBtnText}>Crear transacción</Text>
+                <Text style={styles.emptyBtnText}>Crear mi primera transacción</Text>
               </TouchableOpacity>
             </View>
           }
-          contentContainerStyle={data?.length === 0 ? styles.emptyContainer : { paddingVertical: 8 }}
+          contentContainerStyle={sections.length === 0 ? styles.emptyContainer : { paddingVertical: 8, paddingBottom: 24 }}
+          stickySectionHeadersEnabled={false}
         />
       )}
     </SafeAreaView>
@@ -86,6 +136,8 @@ const styles = StyleSheet.create({
   subtitle:       { fontSize: 13, color: Colors.textSecondary, marginTop: 2 },
   newBtn:         { backgroundColor: Colors.primary, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
   newBtnText:     { color: '#fff', fontWeight: '700', fontSize: 14 },
+  sectionHeader:  { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 6 },
+  sectionTitle:   { fontSize: 13, fontWeight: '700', color: Colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 },
   center:         { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
   errorText:      { color: Colors.textSecondary, fontSize: 15 },
   retryBtn:       { backgroundColor: Colors.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },

@@ -1,10 +1,10 @@
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
-  ActivityIndicator, Alert, ScrollView,
+  ActivityIndicator, Alert, ScrollView, RefreshControl,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { Colors } from '@/constants/colors';
@@ -41,19 +41,49 @@ const COURIER_LABEL: Record<Courier, string> = {
   bluexpress:  'BlueExpress',
 };
 
+function useRelativeTime(date: Date | null) {
+  const [label, setLabel] = useState('');
+  useEffect(() => {
+    if (!date) return;
+    const update = () => {
+      const diff = Math.floor((Date.now() - date.getTime()) / 1000);
+      if (diff < 60)       setLabel('Actualizado hace unos segundos');
+      else if (diff < 3600) setLabel(`Actualizado hace ${Math.floor(diff / 60)} min`);
+      else                  setLabel(`Actualizado hace ${Math.floor(diff / 3600)} h`);
+    };
+    update();
+    const id = setInterval(update, 30_000);
+    return () => clearInterval(id);
+  }, [date]);
+  return label;
+}
+
 export default function TrackingScreen() {
   const { txId } = useLocalSearchParams<{ txId: string }>();
   const queryClient = useQueryClient();
 
   const [courier, setCourier]             = useState<Courier>('chilexpress');
   const [trackingNumber, setTrackingNumber] = useState('');
+  const [lastUpdated, setLastUpdated]     = useState<Date | null>(null);
+  const [refreshing, setRefreshing]       = useState(false);
+  const relativeTime = useRelativeTime(lastUpdated);
 
-  const { data: shipment, isLoading, isError } = useQuery<ShipmentStatusResponse>({
+  const { data: shipment, isLoading, isError, refetch } = useQuery<ShipmentStatusResponse>({
     queryKey: ['shipping', txId],
     queryFn: () => api.get<ShipmentStatusResponse>(`/shipping/${txId}/status`).then((r) => r.data),
     enabled: !!txId,
     retry: false,
+    refetchInterval: (query) =>
+      query.state.data && query.state.data.status !== 'DELIVERED' ? 60_000 : false,
+    refetchIntervalInBackground: false,
+    onSuccess: () => setLastUpdated(new Date()),
   });
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refetch();
+    setRefreshing(false);
+  }, [refetch]);
 
   const { mutate: register, isPending: registering } = useMutation({
     mutationFn: () => api.post('/shipping/track', { transactionId: txId, courier, trackingNumber }),
@@ -85,9 +115,15 @@ export default function TrackingScreen() {
           <Text style={styles.headerTitle}>Estado del envío</Text>
           <View style={{ minWidth: 32 }} />
         </View>
-        <ScrollView contentContainerStyle={styles.content}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
+        >
           <View style={styles.statusCard}>
-            <Text style={[styles.statusLabel, { color }]}>{STATUS_LABEL[shipment.status]}</Text>
+            <View>
+              <Text style={[styles.statusLabel, { color }]}>{STATUS_LABEL[shipment.status]}</Text>
+              {relativeTime ? <Text style={styles.updatedAt}>{relativeTime}</Text> : null}
+            </View>
             <View style={[styles.statusDot, { backgroundColor: color }]} />
           </View>
           <View style={styles.section}>
@@ -179,6 +215,7 @@ const styles = StyleSheet.create({
   center:            { flex: 1, justifyContent: 'center', alignItems: 'center' },
   statusCard:        { backgroundColor: Colors.surface, borderRadius: 12, padding: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
   statusLabel:       { fontSize: 17, fontWeight: '700' },
+  updatedAt:         { fontSize: 11, color: Colors.textMuted, marginTop: 4 },
   statusDot:         { width: 12, height: 12, borderRadius: 6 },
   section:           { backgroundColor: Colors.surface, borderRadius: 12, padding: 16, marginBottom: 10 },
   detailRow:         { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: Colors.border },
