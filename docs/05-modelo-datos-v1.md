@@ -84,6 +84,7 @@ Tabla central. Registra el ciclo de vida completo de cada operación.
 | accepted_at | TIMESTAMP | | Cuándo la contraparte aceptó. Base legal. |
 | auto_release_at | TIMESTAMP | | Timer de liberación automática (ENTREGADO + 48 hrs). |
 | expires_at | TIMESTAMP | | Expiración de PROPUESTA. Default: +24 hrs. |
+| archived_at | TIMESTAMP | | Cuándo el usuario archivó la transacción. NULL = activa. Solo en estados terminales. |
 | created_at | TIMESTAMP | NN | UTC |
 
 ### `payments`

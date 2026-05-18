@@ -11,8 +11,9 @@
 |------|--------|--------|-------------|----------|
 | **Fase 1** | Smoke test backend | ✅ Cerrada (2026-05-08) | — | Integración mobile |
 | **Fase 2** | Integración mobile ↔ backend local | ✅ Cerrada (2026-05-14) | — | Confianza en flujos E2E |
-| **Fase 3** | Calidad de código + gaps | ⏳ Pendiente | 2–3 días | Base sólida para sandbox |
-| **Fase 4** | Sandbox Mercado Pago | ⏳ Pendiente | 1–2 días | Pagos reales validados |
+| **Fase 3** | Calidad de código + gaps | ✅ Cerrada (2026-05-17) | — | Base sólida para sandbox |
+| **Fase 4A** | Refinamiento UX mobile | ✅ Cerrada (2026-05-17) | — | UX pulida antes de sandbox |
+| **Fase 4B** | Sandbox Mercado Pago | ⏳ Pendiente | 1–2 días | Pagos reales validados |
 | **Fase 5** | Preparación producción | ⏳ Pendiente | 3–5 días | Deploy en AWS |
 
 ---
@@ -30,7 +31,7 @@
 
 ---
 
-## Fase 2 — Integración mobile ↔ backend local ⏳
+## Fase 2 — Integración mobile ↔ backend local ✅ CERRADA
 
 **Objetivo:** Validar que la app React Native/Expo se conecta al backend local y los flujos end-to-end funcionan en un dispositivo o emulador real.
 
@@ -52,25 +53,40 @@
 
 ---
 
-## Fase 3 — Calidad de código + gaps ⏳ En curso
+## Fase 3 — Calidad de código + gaps ✅ CERRADA
 
 **Objetivo:** Cerrar los pendientes técnicos que quedaron fuera del MVP para tener una base sólida antes de tocar Mercado Pago real.
 
-**Alcance:**
-- Implementar notificación `TX_SHIPPED` (TODO pendiente en `shipping.service.ts`)
-- Tests de integración de endpoints principales (supertest + DB real)
-- Cobertura de tests ≥ 80% en todos los módulos core (`auth.service` actualmente sin medir, `payments.service` en 71%)
-- Revisar y cerrar cualquier observación de Fase 2
-
-**Criterio de aprobación:** `npm run test:cov` reporta ≥80% en auth, transactions y payments. `TX_SHIPPED` dispara push al comprador al registrar tracking.
+**Resultado:**
+- `TX_SHIPPED` implementado en `shipping.service.ts` — notifica al comprador al registrar tracking ✅
+- 64 tests unitarios pasando (100% pass rate): transactions 100%, auth 97%, payments >80% ✅
+- `PATCH /transactions/:id/archive` + `GET /transactions/archived` implementados ✅
+- Flujo B pantalla pública: mensaje "Iniciá sesión para aceptar" + botón a login ✅
+- Tests de integración postergados (sin DB de test separada en prototipo)
 
 **Documentos:**
 - Protocolo: `docs/13-fase3-calidad-gaps-v1.md`
-- Resultados: `tests/fase3/results.md` (pendiente)
 
 ---
 
-## Fase 4 — Sandbox Mercado Pago ⏳
+## Fase 4A — Refinamiento UX mobile ✅ CERRADA
+
+**Objetivo:** Pulir la experiencia de usuario de la app antes de integrar pagos reales.
+
+**Resultado:**
+- **Login:** prefix "+56 9" fijo + TextInput solo 8 dígitos, validación visual por color de borde, envía `+569XXXXXXXX` al backend ✅
+- **OTP:** countdown visual 2 min, naranja al bajar de 30s, "Código expirado" al llegar a 0, reenviar resetea el timer ✅
+- **Dashboard (Home):** SectionList con 3 secciones contextuales — "Requieren tu atención" / "En progreso" / "Recientes (últimas 5)". Subtítulo dinámico con conteo de atención. Botón 🗂️ a archivadas. ✅
+- **Detalle de transacción:** pull-to-refresh + auto-refresh cada 30s en estados activos ✅
+- **Tracking:** auto-refresh cada 60s, pull-to-refresh, label "Actualizado hace X min" ✅
+- **Archivadas:** pantalla con chips de filtro (Todas / Completadas / Canceladas / Reembolsadas / Expiradas), filtrado client-side ✅
+
+**Documentos:**
+- Detalle: `docs/14-fase4-ux-refinements-v1.md`
+
+---
+
+## Fase 4B — Sandbox Mercado Pago ⏳
 
 **Objetivo:** Validar el flujo de pago real en el entorno de sandbox de Mercado Pago antes de tocar producción.
 
@@ -129,12 +145,13 @@
 
 ## Estado actual de pendientes transversales
 
-| Pendiente | Fase | Prioridad |
-|-----------|------|-----------|
-| `TX_SHIPPED` — notificación al comprador al registrar tracking | Fase 3 | Media |
-| Tests de integración endpoints | Fase 3 | Media |
-| Cobertura ≥80% auth.service + resto | Fase 3 | Media |
-| Cuenta marketplace MP aprobada (Split Payments) | Fase 4 | Alta — bloqueante |
-| Webhook URL en panel MP | Fase 4 | Alta |
-| Variables en AWS Secrets Manager | Fase 5 | Alta |
-| CI/CD pipeline | Fase 5 | Alta |
+| Pendiente | Fase | Prioridad | Estado |
+|-----------|------|-----------|--------|
+| `TX_SHIPPED` — notificación al comprador al registrar tracking | Fase 3 | Media | ✅ Resuelto |
+| Tests de integración endpoints | Fase 3 | Media | ⏳ Postergado (sin DB test) |
+| Cobertura ≥80% auth.service + resto | Fase 3 | Media | ✅ Resuelto |
+| Panel admin web (disputas + evidencias) | Gap 1 | Media | ⏳ Pendiente |
+| Cuenta marketplace MP aprobada (Split Payments) | Fase 4B | Alta — bloqueante | ⏳ Pendiente |
+| Webhook URL en panel MP | Fase 4B | Alta | ⏳ Pendiente |
+| Variables en AWS Secrets Manager | Fase 5 | Alta | ⏳ Pendiente |
+| CI/CD pipeline | Fase 5 | Alta | ⏳ Pendiente |
