@@ -27,7 +27,7 @@ async function bootstrap() {
   const allowedOrigins =
     process.env.NODE_ENV === 'production'
       ? ['https://safepay.cl', 'https://www.safepay.cl', 'https://app.safepay.cl']
-      : ['http://localhost:3000', 'http://localhost:8081'];
+      : ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:8081'];
 
   app.enableCors({
     origin: allowedOrigins,
