@@ -8,6 +8,7 @@ import { queryClient } from '@/lib/queryClient';
 import { Colors } from '@/constants/colors';
 import { useAuthStore } from '@/stores/auth.store';
 import { setAccessToken } from '@/lib/api';
+import { ToastProvider } from '@/components/chrome/Toast';
 
 export default function RootLayout() {
   const { accessToken } = useAuthStore();
@@ -17,13 +18,15 @@ export default function RootLayout() {
   }, [accessToken]);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <PaperProvider>
-        <SafeAreaProvider>
-          <StatusBar style="dark" backgroundColor={Colors.surface} />
-          <Stack screenOptions={{ headerShown: false }} />
-        </SafeAreaProvider>
-      </PaperProvider>
-    </QueryClientProvider>
+    <SafeAreaProvider>
+      <ToastProvider>
+        <QueryClientProvider client={queryClient}>
+          <PaperProvider>
+            <StatusBar style="light" backgroundColor={Colors.background} />
+            <Stack screenOptions={{ headerShown: false }} />
+          </PaperProvider>
+        </QueryClientProvider>
+      </ToastProvider>
+    </SafeAreaProvider>
   );
 }

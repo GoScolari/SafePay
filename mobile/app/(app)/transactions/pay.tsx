@@ -1,143 +1,333 @@
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
-import { WebView } from 'react-native-webview';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useState, useEffect } from 'react';
+/**
+ * SafePay · PayScreen · app/(app)/transactions/pay.tsx
+ *
+ * Pantalla de pago entre el CTA y el checkout de Mercado Pago.
+ *
+ *   1. Mount → POST /payments/initiate con txId o slug → recibe checkoutUrl + paymentId
+ *   2. checkoutUrl string → WebView con checkout real
+ *   3. checkoutUrl null   → UI de pago simulado (modo dev) con Simular éxito / falla
+ *
+ * Acepta params: txId (desde app autenticada) o slug (desde deep link público).
+ */
+
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { WebView, type WebViewNavigation } from 'react-native-webview';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Feather } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
+
+import { ScreenContainer } from '@/components/chrome/ScreenContainer';
+import { AppHeader } from '@/components/chrome/AppHeader';
+import { ActionButton } from '@/components/ActionButton';
+import { EmptyState } from '@/components/chrome/EmptyState';
+import { useToast } from '@/components/chrome/Toast';
+
 import { api } from '@/lib/api';
 import { Colors } from '@/constants/colors';
+import { Radii, Spacing, Typography } from '@/constants/theme';
+import { formatCLP } from '@/lib/utils';
+
+// ─── Tipos ──────────────────────────────────────────────────────────────────
 
 interface InitiateResponse {
   checkoutUrl: string | null;
   paymentId: string;
+  totalAmount?: number;
+  txTitle?: string;
+  shortRef?: string;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Component
+// ═══════════════════════════════════════════════════════════════════════════
+
 export default function PayScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
+  const toast = useToast();
   const queryClient = useQueryClient();
-  const [checkoutUrl, setCheckoutUrl] = useState<string | null | undefined>(undefined);
-  const [paymentId, setPaymentId]     = useState<string | null>(null);
-  const [loading, setLoading]         = useState(true);
-  const [error, setError]             = useState(false);
+  const { txId, slug } = useLocalSearchParams<{ txId?: string; slug?: string }>();
+
+  const [data, setData] = useState<InitiateResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [submitting, setSubmitting] = useState<null | 'success' | 'failure'>(null);
 
   useEffect(() => {
-    if (!id) return;
-    api.post<InitiateResponse>('/payments/initiate', { transactionId: id })
-      .then((r) => {
-        setCheckoutUrl(r.data.checkoutUrl);
-        setPaymentId(r.data.paymentId);
-      })
+    const body = txId ? { transactionId: txId } : { slug };
+    api.post<InitiateResponse>('/payments/initiate', body)
+      .then((r) => setData(r.data))
       .catch(() => setError(true))
-      .finally(() => setLoading(false));
-  }, [id]);
+      .finally(() => setIsLoading(false));
+  }, [txId, slug]);
 
-  const handleSuccess = async () => {
-    if (paymentId && !checkoutUrl) {
+  const resolvedTxId = txId ?? data?.paymentId;
+
+  const onPaymentSuccess = async () => {
+    if (data?.paymentId && data.checkoutUrl === null) {
       try {
-        await api.post(`/payments/dev-confirm/${paymentId}`);
-      } catch { /* ignorar en prod donde no existe el endpoint */ }
+        await api.post(`/payments/dev-confirm/${data.paymentId}`);
+      } catch { /* no existe en prod */ }
     }
-    queryClient.invalidateQueries({ queryKey: ['transaction', id] });
+    if (resolvedTxId) {
+      queryClient.invalidateQueries({ queryKey: ['transaction', resolvedTxId] });
+    }
     queryClient.invalidateQueries({ queryKey: ['transactions'] });
-    router.replace(`/(app)/transactions/${id}` as never);
+    toast.success('Pago confirmado', 'Tu dinero quedó retenido en SafePay.');
+    if (resolvedTxId) {
+      router.replace(`/transactions/${resolvedTxId}` as never);
+    } else {
+      router.replace('/(app)' as never);
+    }
   };
 
-  const handleFailure = () => {
-    Alert.alert('Pago no completado', 'El pago fue cancelado o falló. Podés intentarlo de nuevo.');
+  const onPaymentFailure = () => {
+    toast.error('Pago no completado', 'No se descontó nada. Podés intentarlo de nuevo.');
     router.back();
   };
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator color={Colors.primary} size="large" />
-        <Text style={styles.hint}>Preparando pago…</Text>
-      </View>
-    );
-  }
+  const handleWebViewNav = (e: WebViewNavigation) => {
+    const url = e.url;
+    if (
+      url.includes('safepay.cl/return/success') ||
+      url.includes('/success') ||
+      url.includes('status=approved')
+    ) {
+      void onPaymentSuccess();
+    } else if (
+      url.includes('safepay.cl/return/failure') ||
+      url.includes('/failure') ||
+      url.includes('status=rejected') ||
+      url.includes('status=cancelled')
+    ) {
+      onPaymentFailure();
+    }
+  };
 
+  const onSimulate = async (outcome: 'success' | 'failure') => {
+    setSubmitting(outcome);
+    try {
+      if (outcome === 'success') await onPaymentSuccess();
+      else onPaymentFailure();
+    } finally {
+      setSubmitting(null);
+    }
+  };
+
+  // ── Error ──
   if (error) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>No se pudo iniciar el pago.</Text>
-        <TouchableOpacity style={styles.btn} onPress={() => router.back()}>
-          <Text style={styles.btnText}>Volver</Text>
-        </TouchableOpacity>
-      </View>
+      <ScreenContainer edges={['top']}>
+        <AppHeader variant="back" subtitle="Pago" title="Error" onBack={() => router.back()} />
+        <EmptyState
+          tone="danger"
+          icon="alert-circle"
+          title="No pudimos iniciar el pago"
+          body="Verificá tu conexión y reintentá. Si persiste, contactá a soporte."
+          action={{ label: 'Volver', icon: 'arrow-left', onPress: () => router.back() }}
+        />
+      </ScreenContainer>
     );
   }
 
-  // Modo dev: sin Mercado Pago configurado
-  if (checkoutUrl === null) {
+  // ── Loading ──
+  if (isLoading || !data) {
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Text style={styles.backText}>←</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Pago simulado</Text>
-          <View style={{ minWidth: 32 }} />
+      <ScreenContainer edges={['top']}>
+        <AppHeader variant="back" subtitle="Pago" title="Procesando" onBack={() => router.back()} />
+        <View style={styles.loading}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>Conectando con Mercado Pago…</Text>
         </View>
-        <View style={styles.center}>
-          <Text style={styles.devEmoji}>🧪</Text>
-          <Text style={styles.devTitle}>Modo desarrollo</Text>
-          <Text style={styles.devSub}>Mercado Pago no está configurado.{'\n'}Simulá el resultado del pago:</Text>
-          <TouchableOpacity style={[styles.btn, { marginTop: 24 }]} onPress={handleSuccess}>
-            <Text style={styles.btnText}>✅ Simular pago exitoso</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.btn, styles.btnOutline, { marginTop: 12 }]} onPress={handleFailure}>
-            <Text style={[styles.btnText, { color: Colors.danger }]}>✖ Simular pago fallido</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+      </ScreenContainer>
     );
   }
 
-  // WebView real con Mercado Pago
+  // ── Modo simulado (dev) ──
+  if (data.checkoutUrl === null) {
+    return (
+      <ScreenContainer edges={['top']}>
+        <AppHeader
+          variant="back"
+          subtitle="Pago"
+          title="Procesando"
+          onBack={() => router.back()}
+        />
+
+        <View style={styles.simWrap}>
+          <View style={styles.devBanner}>
+            <Feather name="alert-triangle" size={14} color="#FCD34D" />
+            <Text style={styles.devBannerText}>Modo desarrollo · pago simulado</Text>
+          </View>
+
+          {data.totalAmount != null && (
+            <View style={styles.amountBlock}>
+              <Text style={styles.amountLabel}>Total a pagar</Text>
+              <Text style={styles.amountVal}>{formatCLP(data.totalAmount)}</Text>
+              {(data.txTitle || data.shortRef) && (
+                <Text style={styles.amountTx}>
+                  {[data.txTitle, data.shortRef ? `#${data.shortRef}` : null].filter(Boolean).join(' · ')}
+                </Text>
+              )}
+            </View>
+          )}
+
+          <View style={styles.simActions}>
+            <Text style={styles.simLabel}>Simular resultado</Text>
+            <ActionButton
+              variant="primary"
+              label="Simular pago exitoso"
+              fullWidth
+              loading={submitting === 'success'}
+              disabled={submitting !== null}
+              onPress={() => void onSimulate('success')}
+              leftIcon={<Feather name="check" size={16} color={Colors.textOnPrimary} />}
+            />
+            <View style={{ height: Spacing.sm }} />
+            <ActionButton
+              variant="danger"
+              label="Simular pago fallido"
+              fullWidth
+              loading={submitting === 'failure'}
+              disabled={submitting !== null}
+              onPress={() => void onSimulate('failure')}
+              leftIcon={<Feather name="x" size={16} color={Colors.textOnPrimary} />}
+            />
+          </View>
+
+          <View style={styles.note}>
+            <Text style={styles.noteTitle}>¿Por qué pago simulado?</Text>
+            <Text style={styles.noteBody}>
+              En modo dev el backend devuelve checkoutUrl: null.
+              En producción acá se monta una WebView con el checkout real de Mercado Pago.
+            </Text>
+          </View>
+        </View>
+      </ScreenContainer>
+    );
+  }
+
+  // ── Modo real · WebView de Mercado Pago ──
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={handleFailure} style={styles.backBtn}>
-          <Text style={styles.backText}>✖</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Pago seguro</Text>
-        <View style={{ minWidth: 32 }} />
-      </View>
+    <ScreenContainer padding={false} edges={['top']}>
+      <AppHeader
+        variant="back"
+        subtitle="Pago"
+        title="Mercado Pago"
+        onBack={onPaymentFailure}
+      />
       <WebView
-        source={{ uri: checkoutUrl as string }}
-        onNavigationStateChange={(navState) => {
-          const url = navState.url;
-          if (url.includes('safepay://') || url.includes('/success') || url.includes('status=approved')) {
-            handleSuccess();
-          } else if (url.includes('/failure') || url.includes('status=rejected') || url.includes('status=cancelled')) {
-            handleFailure();
-          }
-        }}
+        source={{ uri: data.checkoutUrl }}
+        onNavigationStateChange={handleWebViewNav}
         startInLoadingState
         renderLoading={() => (
-          <View style={styles.center}>
-            <ActivityIndicator color={Colors.primary} size="large" />
+          <View style={styles.loading}>
+            <ActivityIndicator size="large" color={Colors.primary} />
           </View>
         )}
-        style={{ flex: 1 }}
+        style={styles.webview}
       />
-    </SafeAreaView>
+    </ScreenContainer>
   );
 }
 
+// ─── Styles ─────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  container:   { flex: 1, backgroundColor: Colors.background },
-  center:      { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, padding: 24 },
-  header:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: Colors.border, backgroundColor: Colors.surface },
-  backBtn:     { minWidth: 32 },
-  backText:    { fontSize: 20, color: Colors.primary },
-  headerTitle: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '700', color: Colors.textPrimary },
-  hint:        { color: Colors.textSecondary, marginTop: 8 },
-  errorText:   { color: Colors.textSecondary, fontSize: 15, textAlign: 'center' },
-  devEmoji:    { fontSize: 48 },
-  devTitle:    { fontSize: 20, fontWeight: '700', color: Colors.textPrimary },
-  devSub:      { fontSize: 14, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
-  btn:         { backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 14, paddingHorizontal: 24, alignItems: 'center', width: '100%' },
-  btnOutline:  { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: Colors.danger },
-  btnText:     { color: '#fff', fontSize: 15, fontWeight: '700' },
+  loading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.md,
+  },
+  loadingText: {
+    ...Typography.body,
+    fontSize: 14,
+    color: Colors.textSecondary,
+  },
+
+  simWrap: {
+    flex: 1,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+  },
+  devBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: 'rgba(245, 158, 11, 0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.30)',
+    borderRadius: Radii.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    marginBottom: Spacing.lg,
+  },
+  devBannerText: {
+    ...Typography.caption,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FCD34D',
+  },
+
+  amountBlock: {
+    alignItems: 'center',
+    paddingVertical: Spacing.xl,
+  },
+  amountLabel: {
+    ...Typography.label,
+    fontSize: 11,
+    color: Colors.textMuted,
+    marginBottom: 4,
+  },
+  amountVal: {
+    fontSize: 36,
+    lineHeight: 42,
+    fontWeight: '700',
+    letterSpacing: -0.8,
+    color: Colors.textPrimary,
+    fontVariant: ['tabular-nums'] as any,
+  },
+  amountTx: {
+    ...Typography.caption,
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginTop: 6,
+    textAlign: 'center',
+  },
+
+  simActions: {
+    marginTop: Spacing.md,
+  },
+  simLabel: {
+    ...Typography.label,
+    fontSize: 11,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    marginBottom: Spacing.sm,
+  },
+
+  note: {
+    marginTop: Spacing.lg,
+    padding: Spacing.md,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radii.md,
+  },
+  noteTitle: {
+    ...Typography.caption,
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+    marginBottom: 4,
+  },
+  noteBody: {
+    ...Typography.caption,
+    fontSize: 11,
+    color: Colors.textMuted,
+    lineHeight: 17,
+  },
+
+  webview: { flex: 1, backgroundColor: Colors.background },
 });

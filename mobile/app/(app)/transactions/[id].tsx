@@ -1,29 +1,65 @@
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, RefreshControl } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
-import { useState, useCallback } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useTransaction } from '@/hooks/useTransaction';
-import { StatusStepper } from '@/components/StatusStepper';
+/**
+ * SafePay · TxDetailScreen · app/(app)/transactions/[id].tsx
+ *
+ * Pantalla central de una transacción. Estructura:
+ *
+ *   ┌─ AppHeader (back + share)
+ *   ├─ Hero card · monto + StatusBadge
+ *   ├─ NextActionCard · qué hace el usuario AHORA (status × rol)
+ *   ├─ StatusStepper · timeline visual
+ *   └─ Detail rows · contraparte, fee, tracking
+ */
+
+import React, { useCallback, useState } from 'react';
+import {
+  Image,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type ViewStyle,
+} from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Feather } from '@expo/vector-icons';
+
+import { ScreenContainer } from '@/components/chrome/ScreenContainer';
+import { AppHeader } from '@/components/chrome/AppHeader';
+import { EmptyState } from '@/components/chrome/EmptyState';
 import { ActionButton } from '@/components/ActionButton';
-import { Colors } from '@/constants/colors';
-import { formatCLP, formatDate } from '@/lib/utils';
+import { StatusBadge } from '@/components/StatusBadge';
+import { StatusStepper } from '@/components/StatusStepper';
+import { useToast } from '@/components/chrome/Toast';
+
+import { useTransaction } from '@/hooks/useTransaction';
+import { useFiles, type UploadedFile } from '@/hooks/useFiles';
 import { useAuthStore } from '@/stores/auth.store';
-import { TxStatus } from '@/constants/txStatus';
 
-const MODALITY_LABEL: Record<string, string> = {
-  shipping:   '📦 Con envío',
-  presential: '🤝 Presencial',
-};
-const FEE_PAYER_LABEL: Record<string, string> = {
-  seller: 'La paga el vendedor',
-  buyer:  'La paga el comprador',
-  split:  'Mitad y mitad',
-};
+import { Colors } from '@/constants/colors';
+import { Radii, Spacing, Typography } from '@/constants/theme';
+import type { TxStatus } from '@/constants/txStatus';
+import { formatCLP } from '@/lib/utils';
 
-export default function TransactionDetailScreen() {
+// ═══════════════════════════════════════════════════════════════════════════
+// Component
+// ═══════════════════════════════════════════════════════════════════════════
+
+export default function TxDetailScreen() {
+  const router = useRouter();
+  const toast = useToast();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const userId  = useAuthStore((s) => s.user?.id);
-  const { tx, isLoading, isError, refetch, accept, accepting, cancel, cancelling, releasePayment, releasing, deliver, delivering, devDeliver, devDelivering, archive, archiving, copyLink } = useTransaction(id);
+  const userId = useAuthStore((s) => s.user?.id);
+  const {
+    tx, isLoading, isError, refetch,
+    accept, accepting,
+    cancel, cancelling,
+    releasePayment, releasing,
+    deliver, delivering,
+    archive, archiving,
+    copyLink,
+  } = useTransaction(id);
+
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -31,249 +67,650 @@ export default function TransactionDetailScreen() {
     setRefreshing(false);
   }, [refetch]);
 
-  if (isLoading) {
-    return <View style={styles.center}><ActivityIndicator color={Colors.primary} size="large" /></View>;
-  }
-  if (isError || !tx) {
+  if (isLoading && !tx) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>No se pudo cargar la transacción.</Text>
-        <TouchableOpacity onPress={() => refetch()} style={styles.retryBtn}>
-          <Text style={styles.retryText}>Reintentar</Text>
-        </TouchableOpacity>
-      </View>
+      <ScreenContainer edges={['top']}>
+        <AppHeader variant="back" title="Cargando…" onBack={() => router.back()} />
+      </ScreenContainer>
     );
   }
 
-  const isInitiator   = tx.initiatorId === userId;
-  const isCounterpart = tx.counterpartId === userId;
-  const isSeller = (isInitiator && tx.initiatorRole === 'seller') || (isCounterpart && tx.initiatorRole === 'buyer');
-  const isBuyer  = !isSeller;
-
-  const confirmCancel = () =>
-    Alert.alert('Cancelar transacción', '¿Estás seguro? Esta acción no se puede deshacer.', [
-      { text: 'No', style: 'cancel' },
-      { text: 'Sí, cancelar', style: 'destructive', onPress: () => cancel() },
-    ]);
-
-  const confirmRelease = () =>
-    Alert.alert('Confirmar recepción', '¿Recibiste el artículo en buenas condiciones? Esto liberará el pago al vendedor.', [
-      { text: 'No, esperar', style: 'cancel' },
-      { text: 'Sí, liberar pago', onPress: () => {
-        const paymentId = tx.payment?.id ?? id;
-        releasePayment(paymentId);
-      }},
-    ]);
-
-  const renderActions = () => {
-    const status = tx.status as TxStatus;
-
-    if (status === 'PROPUESTA') {
-      if (!isInitiator && !isCounterpart) {
-        return <ActionButton label="Aceptar transacción" onPress={() => accept()} loading={accepting} />;
-      }
-      if (!isInitiator) {
-        return (
-          <View style={styles.actions}>
-            <ActionButton label="Aceptar" onPress={() => accept()} loading={accepting} />
-            <ActionButton label="Rechazar" onPress={confirmCancel} loading={cancelling} variant="outline" />
-          </View>
-        );
-      }
-      return (
-        <View style={styles.actions}>
-          <ActionButton label="Copiar link de pago" onPress={async () => { await copyLink(); Alert.alert('Link copiado', 'Compartilo con la otra parte.'); }} variant="outline" />
-          <ActionButton label="Cancelar" onPress={confirmCancel} loading={cancelling} variant="danger" />
-        </View>
-      );
-    }
-
-    if (status === 'CONFIRMADA') {
-      if (isBuyer) {
-        return <ActionButton label="Ir a pagar" onPress={() => router.push(`/(app)/transactions/pay?id=${tx.id}`)} />;
-      }
-      return (
-        <View style={styles.infoBox}>
-          <Text style={styles.infoText}>⏳ Esperando que el comprador realice el pago</Text>
-        </View>
-      );
-    }
-
-    if (status === 'PAGADO') {
-      if (isSeller) {
-        if (tx.modality === 'presential') {
-          return (
-            <View style={styles.actions}>
-              <ActionButton
-                label="Confirmar entrega presencial"
-                onPress={() => Alert.alert(
-                  'Confirmar entrega',
-                  '¿Confirmás que entregaste el artículo en mano al comprador?',
-                  [
-                    { text: 'No', style: 'cancel' },
-                    { text: 'Sí, entreguei', onPress: () => deliver() },
-                  ],
-                )}
-                loading={delivering}
-              />
-              <ActionButton label="Cancelar" onPress={confirmCancel} loading={cancelling} variant="danger" />
-            </View>
-          );
-        }
-        return (
-          <View style={styles.actions}>
-            <ActionButton label="Registrar envío" onPress={() => router.push(`/(app)/transactions/tracking?txId=${tx.id}`)} />
-            <ActionButton label="Cancelar" onPress={confirmCancel} loading={cancelling} variant="danger" />
-          </View>
-        );
-      }
-      return <ActionButton label="Cancelar" onPress={confirmCancel} loading={cancelling} variant="danger" />;
-    }
-
-    if (status === 'EN_TRANSITO') {
-      return (
-        <View style={styles.actions}>
-          <TouchableOpacity onPress={() => router.push(`/(app)/transactions/tracking?txId=${tx.id}`)} style={styles.infoBox}>
-            <Text style={styles.infoText}>📦 Ver estado del envío</Text>
-          </TouchableOpacity>
-          {isSeller && tx.modality !== 'presential' && (
-            <ActionButton label="🧪 Simular entrega" onPress={() => devDeliver()} loading={devDelivering} variant="outline" />
-          )}
-        </View>
-      );
-    }
-
-    if (status === 'ENTREGADO') {
-      if (isBuyer) {
-        return (
-          <View style={styles.actions}>
-            <ActionButton label="Confirmar conforme" onPress={confirmRelease} loading={releasing} />
-            <ActionButton label="Abrir disputa" onPress={() => router.push(`/(app)/disputes/new?txId=${tx.id}`)} variant="outline" />
-          </View>
-        );
-      }
-      return (
-        <View style={styles.infoBox}>
-          <Text style={styles.infoText}>⏳ Esperando que el comprador confirme la recepción</Text>
-        </View>
-      );
-    }
-
-    if (status === 'COMPLETADO' || status === 'CANCELADO' || status === 'EXPIRADO' || status === 'REEMBOLSADO') {
-      return (
-        <ActionButton
-          label="Archivar"
-          onPress={() => Alert.alert('Archivar transacción', 'Esta transacción dejará de aparecer en tu lista.', [
-            { text: 'Cancelar', style: 'cancel' },
-            { text: 'Archivar', onPress: () => archive() },
-          ])}
-          loading={archiving}
-          variant="outline"
+  if (isError || !tx) {
+    return (
+      <ScreenContainer edges={['top']}>
+        <AppHeader variant="back" title="Transacción" onBack={() => router.back()} />
+        <EmptyState
+          tone="danger"
+          icon="alert-circle"
+          title="No se pudo cargar"
+          body="Verificá tu conexión y volvé a intentar."
+          action={{ label: 'Reintentar', icon: 'refresh-cw', onPress: () => refetch() }}
         />
-      );
-    }
+      </ScreenContainer>
+    );
+  }
 
-    if (status === 'EN_DISPUTA') {
-      const disputeId = (tx as any).dispute?.id;
-      return (
-        <ActionButton
-          label="Ver disputa"
-          onPress={() => router.push(disputeId ? `/(app)/disputes/${disputeId}` : `/(app)/disputes/${id}`)}
-          variant="outline"
-        />
-      );
-    }
+  const isSeller =
+    (tx.initiatorId === userId && tx.initiatorRole === 'seller') ||
+    (tx.counterpartId === userId && tx.initiatorRole === 'buyer');
 
-    return null;
+  const counterpartyName = isSeller
+    ? (tx.initiatorRole === 'seller' ? tx.counterpart?.fullName : tx.initiator?.fullName) ?? null
+    : (tx.initiatorRole === 'buyer'  ? tx.counterpart?.fullName : tx.initiator?.fullName) ?? null;
+
+  const handleShare = async () => {
+    await copyLink();
+    toast.success('Link copiado al portapapeles', 'Compartilo por WhatsApp para que pague');
   };
 
+  const nextAction = computeNextAction({
+    status: tx.status,
+    isSeller,
+    mode: tx.modality,
+    txId: tx.id,
+    paymentId: tx.payment?.id,
+    disputeId: tx.dispute?.id,
+  });
+
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Text style={styles.backText}>←</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Transacción</Text>
-        <TouchableOpacity onPress={async () => { await copyLink(); Alert.alert('Link copiado'); }}>
-          <Text style={styles.slugText}>#{tx.slug.slice(-8)}</Text>
-        </TouchableOpacity>
-      </View>
+    <ScreenContainer padding={false} edges={['top']}>
+      <AppHeader
+        variant="back"
+        subtitle="Transacción"
+        title={tx.description}
+        onBack={() => router.back()}
+        actionIcon="share-2"
+        onActionPress={handleShare}
+      />
 
       <ScrollView
-        contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={Colors.primary}
+            colors={[Colors.primary]}
+          />
+        }
       >
-        {/* Estado */}
-        <View style={styles.section}>
-          <StatusStepper status={tx.status as TxStatus} flow={tx.modality} />
-        </View>
+        {/* Hero */}
+        <HeroCard
+          status={tx.status}
+          amount={tx.amount}
+          isSeller={isSeller}
+        />
 
-        {/* Info principal */}
-        <View style={styles.section}>
-          <Text style={styles.description}>{tx.description}</Text>
-          <View style={styles.amountRow}>
-            <Text style={styles.amount}>{formatCLP(tx.amount)}</Text>
-            <Text style={styles.fee}>+ {formatCLP(tx.fee)} comisión</Text>
-          </View>
-        </View>
+        {/* Next action */}
+        {nextAction && (
+          <NextActionCard
+            action={nextAction}
+            onShare={handleShare}
+            onAccept={() => accept()}
+            onCancel={() => cancel()}
+            onRelease={() => releasePayment(tx.payment?.id ?? id)}
+            onDeliver={() => deliver()}
+            accepting={accepting}
+            cancelling={cancelling}
+            releasing={releasing}
+            delivering={delivering}
+            router={router}
+            toast={toast}
+          />
+        )}
 
-        {/* Detalles */}
-        <View style={styles.section}>
-          <DetailRow label="Modalidad" value={MODALITY_LABEL[tx.modality] ?? tx.modality} />
-          <DetailRow label="Comisión" value={FEE_PAYER_LABEL[tx.feePayer] ?? tx.feePayer} />
-          <DetailRow label="Tu rol" value={isSeller ? '🏷️ Vendedor' : '🛒 Comprador'} />
-          {tx.counterpartId && (
+        {/* Fotos — solo ENTREGADO + comprador */}
+        {tx.status === 'ENTREGADO' && !isSeller && (
+          <PhotoStrip txId={tx.id} router={router} />
+        )}
+
+        {/* Stepper */}
+        <Text style={styles.sectionLabel}>Progreso</Text>
+        <StatusStepper
+          status={tx.status}
+          flow={tx.modality}
+        />
+
+        {/* Detail */}
+        <Text style={styles.sectionLabel}>Detalle</Text>
+        <View style={styles.detail}>
+          <DetailRow
+            label={isSeller ? 'Comprador' : 'Vendedor'}
+            value={counterpartyName ?? '— pendiente de aceptación'}
+          />
+          <DetailRow
+            label="Modo"
+            value={tx.modality === 'shipping' ? 'Envío por courier' : 'Presencial'}
+          />
+          <DetailRow
+            label="Fee SafePay"
+            value={`${formatCLP(tx.fee)} · ${feePayerLabel(tx.feePayer)}`}
+          />
+          {isSeller && (
             <DetailRow
-              label={isSeller ? 'Comprador' : 'Vendedor'}
-              value={isInitiator ? (tx.counterpart?.fullName ?? '—') : (tx.initiator?.fullName ?? '—')}
+              label="Vas a recibir"
+              value={formatCLP(netSellerAmount(tx.amount, tx.fee, tx.feePayer))}
             />
           )}
-          <DetailRow label="Creada" value={formatDate(tx.createdAt)} />
-          {tx.expiresAt && tx.status === 'PROPUESTA' && (
-            <DetailRow label="Expira" value={formatDate(tx.expiresAt)} />
-          )}
+          <DetailRow label="Slug" value={tx.slug} mono last />
         </View>
-      </ScrollView>
 
-      {/* Acciones */}
-      <View style={styles.footer}>
-        {renderActions()}
-      </View>
-    </SafeAreaView>
+        {/* Terminal: archivar */}
+        {isTerminal(tx.status) && (
+          <View style={styles.archiveWrap}>
+            <ActionButton
+              variant="outline"
+              label="Archivar transacción"
+              fullWidth
+              loading={archiving}
+              onPress={() => archive()}
+            />
+          </View>
+        )}
+      </ScrollView>
+    </ScreenContainer>
   );
 }
 
-function DetailRow({ label, value }: { label: string; value: string }) {
+// ═══════════════════════════════════════════════════════════════════════════
+// NextAction
+// ═══════════════════════════════════════════════════════════════════════════
+
+type NextActionKey =
+  | 'pay' | 'accept-or-reject' | 'register-shipping' | 'view-tracking'
+  | 'confirm-reception' | 'open-dispute' | 'cancel' | 'waiting-counterparty'
+  | 'waiting-confirmation' | 'view-dispute';
+
+interface NextAction {
+  key: NextActionKey;
+  icon: React.ComponentProps<typeof Feather>['name'];
+  iconTone: 'primary' | 'warning' | 'success' | 'danger';
+  title: string;
+  body: string;
+  urgent?: boolean;
+  primary: { label: string; action: 'share' | 'route' | 'accept' | 'cancel' | 'release' | 'deliver'; route?: string };
+  secondary?: { label: string; variant: 'outline' | 'danger'; action: 'share' | 'route' | 'cancel'; route?: string };
+}
+
+function computeNextAction(p: {
+  status: TxStatus;
+  isSeller: boolean;
+  mode: 'shipping' | 'presential';
+  txId: string;
+  paymentId?: string;
+  disputeId?: string;
+}): NextAction | null {
+  const { status, isSeller, mode, txId, disputeId } = p;
+
+  switch (status) {
+    case 'PROPUESTA':
+      if (isSeller) {
+        return {
+          key: 'waiting-counterparty',
+          icon: 'clock',
+          iconTone: 'primary',
+          title: 'Esperando a la contraparte',
+          body: 'Compartí el link de la propuesta. Cuando el comprador acepte, podrás avanzar al pago.',
+          primary: { label: 'Copiar link', action: 'share' },
+          secondary: { label: 'Cancelar', variant: 'outline', action: 'cancel' },
+        };
+      }
+      return {
+        key: 'accept-or-reject',
+        icon: 'check-circle',
+        iconTone: 'primary',
+        title: 'Te invitaron a una transacción',
+        body: 'El vendedor inició una propuesta. Aceptá para avanzar al pago protegido.',
+        primary: { label: 'Aceptar propuesta', action: 'accept' },
+        secondary: { label: 'Rechazar', variant: 'outline', action: 'cancel' },
+      };
+
+    case 'CONFIRMADA':
+      return {
+        key: 'pay',
+        icon: 'credit-card',
+        iconTone: 'primary',
+        title: 'Listo para pagar',
+        body: isSeller
+          ? 'El comprador puede proceder con el pago en cualquier momento.'
+          : 'Confirmaste los términos. Procedé a pagar para que SafePay retenga el dinero.',
+        primary: isSeller
+          ? { label: 'Compartir link', action: 'share' }
+          : { label: 'Ir a pagar', action: 'route', route: `/transactions/pay?txId=${txId}` },
+      };
+
+    case 'PAGADO':
+      if (isSeller) {
+        return {
+          key: 'register-shipping',
+          icon: mode === 'shipping' ? 'truck' : 'map-pin',
+          iconTone: 'warning',
+          urgent: true,
+          title: mode === 'shipping' ? 'Tu turno · registrar envío' : 'Coordinar encuentro',
+          body: mode === 'shipping'
+            ? 'El comprador ya pagó. Despachá el producto y subí el código de tracking.'
+            : 'El comprador ya pagó. Coordinen el encuentro y confirmá la entrega.',
+          primary: mode === 'shipping'
+            ? { label: 'Registrar envío', action: 'route', route: `/transactions/tracking?txId=${txId}` }
+            : { label: 'Marcar como entregado', action: 'deliver' },
+          secondary: { label: 'Cancelar transacción', variant: 'outline', action: 'cancel' },
+        };
+      }
+      return {
+        key: 'waiting-confirmation',
+        icon: 'clock',
+        iconTone: 'primary',
+        title: 'Esperando al vendedor',
+        body: 'Tu pago está retenido. El vendedor debe despachar o coordinar el encuentro.',
+        primary: { label: 'Cancelar transacción', action: 'cancel' },
+      };
+
+    case 'EN_TRANSITO':
+      return {
+        key: 'view-tracking',
+        icon: 'package',
+        iconTone: 'primary',
+        title: 'Paquete en camino',
+        body: 'SafePay rastrea el envío automáticamente. Te avisamos al confirmarse la entrega.',
+        primary: { label: 'Ver estado del envío', action: 'route', route: `/transactions/tracking?txId=${txId}` },
+      };
+
+    case 'ENTREGADO':
+      if (!isSeller) {
+        return {
+          key: 'confirm-reception',
+          icon: 'check-circle',
+          iconTone: 'success',
+          title: '¿Recibiste lo acordado?',
+          body: 'Si está todo bien, confirmá y liberamos el pago. Si hay un problema, abrí disputa antes de las 48h.',
+          primary: { label: 'Confirmar recepción', action: 'release' },
+          secondary: { label: 'Abrir disputa', variant: 'danger', action: 'route', route: `/disputes/new?txId=${txId}` },
+        };
+      }
+      return {
+        key: 'waiting-confirmation',
+        icon: 'clock',
+        iconTone: 'primary',
+        title: 'Esperando confirmación',
+        body: 'El comprador tiene 48h para confirmar. Si no responde, el pago se libera automáticamente.',
+        primary: { label: 'Compartir transacción', action: 'share' },
+      };
+
+    case 'EN_DISPUTA':
+      return {
+        key: 'view-dispute',
+        icon: 'alert-triangle',
+        iconTone: 'danger',
+        urgent: true,
+        title: 'Disputa abierta',
+        body: isSeller
+          ? 'El comprador reportó un problema. Tenés 48h para responder con tu versión y evidencia.'
+          : 'Estamos revisando la disputa. Te avisamos cuando haya resolución.',
+        primary: {
+          label: 'Ver disputa',
+          action: 'route',
+          route: disputeId ? `/disputes/${disputeId}` : `/disputes/by-tx/${txId}`,
+        },
+      };
+
+    case 'COMPLETADO':
+    case 'CANCELADO':
+    case 'REEMBOLSADO':
+    case 'EXPIRADO':
+      return null;
+  }
+}
+
+// ─── NextActionCard ─────────────────────────────────────────────────────────
+
+interface NextActionCardProps {
+  action: NextAction;
+  onShare: () => void;
+  onAccept: () => void;
+  onCancel: () => void;
+  onRelease: () => void;
+  onDeliver: () => void;
+  accepting: boolean;
+  cancelling: boolean;
+  releasing: boolean;
+  delivering: boolean;
+  router: ReturnType<typeof useRouter>;
+  toast: ReturnType<typeof useToast>;
+}
+
+function NextActionCard({
+  action, onShare, onAccept, onCancel, onRelease, onDeliver,
+  accepting, cancelling, releasing, delivering, router,
+}: NextActionCardProps) {
+  const dispatch = (act: NextAction['primary']['action'], route?: string) => {
+    switch (act) {
+      case 'share':   return onShare();
+      case 'accept':  return onAccept();
+      case 'cancel':  return onCancel();
+      case 'release': return onRelease();
+      case 'deliver': return onDeliver();
+      case 'route':   return route ? router.push(route as never) : undefined;
+    }
+  };
+
+  const primaryLoading =
+    (action.primary.action === 'accept'  && accepting)  ||
+    (action.primary.action === 'cancel'  && cancelling) ||
+    (action.primary.action === 'release' && releasing)  ||
+    (action.primary.action === 'deliver' && delivering);
+
+  const secondaryLoading =
+    (action.secondary?.action === 'cancel' && cancelling);
+
   return (
-    <View style={styles.detailRow}>
-      <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={styles.detailValue}>{value}</Text>
+    <View style={[styles.nextCard, action.urgent && styles.nextCardUrgent]}>
+      <View style={styles.nextHeader}>
+        <View style={[styles.nextIcon, toneStyle(action.iconTone)]}>
+          <Feather name={action.icon} size={14} color={toneColor(action.iconTone)} />
+        </View>
+        <Text style={styles.nextTitle} numberOfLines={2}>{action.title}</Text>
+      </View>
+      <Text style={styles.nextBody}>{action.body}</Text>
+
+      <ActionButton
+        variant="primary"
+        label={action.primary.label}
+        fullWidth
+        loading={primaryLoading}
+        onPress={() => dispatch(action.primary.action, action.primary.route)}
+      />
+      {action.secondary && (
+        <View style={{ marginTop: Spacing.xs }}>
+          <ActionButton
+            variant={action.secondary.variant === 'danger' ? 'danger' : 'outline'}
+            label={action.secondary.label}
+            fullWidth
+            loading={secondaryLoading}
+            onPress={() => dispatch(action.secondary!.action, action.secondary!.route)}
+          />
+        </View>
+      )}
     </View>
   );
 }
 
+// ─── PhotoStrip ─────────────────────────────────────────────────────────────
+
+function PhotoStrip({ txId, router }: { txId: string; router: ReturnType<typeof useRouter> }) {
+  const { files, getFileUrl } = useFiles(txId);
+  const [urls, setUrls] = useState<Record<string, string>>({});
+
+  React.useEffect(() => {
+    files.forEach((f) => {
+      if (!urls[f.id]) {
+        getFileUrl(f.id).then((url) => setUrls((prev) => ({ ...prev, [f.id]: url })));
+      }
+    });
+  }, [files]);
+
+  const goToPhotos = () => router.push(`/(app)/transactions/photos?txId=${txId}` as never);
+  const visible = files.slice(0, 4);
+
+  return (
+    <>
+      <Text style={styles.sectionLabel}>FOTOS RECIBIDAS · SUBÍ EVIDENCIA</Text>
+      <View style={styles.photoRow}>
+        {visible.map((f) => (
+          <Pressable key={f.id} style={styles.photoThumb} onPress={goToPhotos}>
+            {urls[f.id] ? (
+              <Image source={{ uri: urls[f.id] }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+            ) : (
+              <Feather name="image" size={20} color={Colors.textMuted} />
+            )}
+          </Pressable>
+        ))}
+        <Pressable style={[styles.photoThumb, styles.photoAdd]} onPress={goToPhotos}>
+          <Feather name="plus" size={20} color={Colors.textMuted} />
+        </Pressable>
+      </View>
+    </>
+  );
+}
+
+// ─── HeroCard ───────────────────────────────────────────────────────────────
+
+function HeroCard({ status, amount, isSeller }: { status: TxStatus; amount: number; isSeller: boolean }) {
+  const label = buildAmountLabel(status, isSeller);
+  return (
+    <View style={styles.hero}>
+      <View style={styles.heroGlow} pointerEvents="none" />
+      <Text style={styles.heroLabel}>{label}</Text>
+      <Text style={styles.heroAmount}>{formatCLP(amount)}</Text>
+      <View style={{ marginTop: Spacing.xs }}>
+        <StatusBadge status={status} size="md" />
+      </View>
+    </View>
+  );
+}
+
+function buildAmountLabel(status: TxStatus, isSeller: boolean): string {
+  switch (status) {
+    case 'PROPUESTA':   return 'Precio acordado';
+    case 'CONFIRMADA':  return 'A pagar';
+    case 'PAGADO':
+    case 'EN_TRANSITO':
+    case 'ENTREGADO':
+    case 'EN_DISPUTA':  return isSeller ? 'Monto retenido' : 'Total pagado';
+    case 'COMPLETADO':  return isSeller ? 'Liberado' : 'Total pagado';
+    case 'CANCELADO':   return 'Cancelado';
+    case 'REEMBOLSADO': return 'Reembolsado';
+    case 'EXPIRADO':    return 'Sin cargo';
+  }
+}
+
+// ─── DetailRow ──────────────────────────────────────────────────────────────
+
+function DetailRow({
+  label, value, mono, last,
+}: { label: string; value: string; mono?: boolean; last?: boolean }) {
+  return (
+    <View style={[styles.row, last && styles.rowLast]}>
+      <Text style={styles.rowLabel}>{label}</Text>
+      <Text
+        style={[styles.rowValue, mono && styles.rowValueMono]}
+        numberOfLines={1}
+      >
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function feePayerLabel(fp: 'buyer' | 'seller' | 'split'): string {
+  switch (fp) {
+    case 'buyer':  return 'asume el comprador';
+    case 'seller': return 'asume el vendedor';
+    case 'split':  return 'dividido 50/50';
+  }
+}
+
+function netSellerAmount(amount: number, fee: number, feePayer: 'buyer' | 'seller' | 'split'): number {
+  if (feePayer === 'seller') return amount - fee;
+  if (feePayer === 'split')  return amount - Math.ceil(fee / 2);
+  return amount;
+}
+
+function isTerminal(status: TxStatus): boolean {
+  return ['COMPLETADO', 'CANCELADO', 'REEMBOLSADO', 'EXPIRADO'].includes(status);
+}
+
+// ─── Tone helpers ────────────────────────────────────────────────────────────
+
+function toneStyle(tone: NextAction['iconTone']): ViewStyle {
+  switch (tone) {
+    case 'primary': return { backgroundColor: Colors.primaryMuted };
+    case 'warning': return { backgroundColor: Colors.warningMuted };
+    case 'success': return { backgroundColor: Colors.successMuted };
+    case 'danger':  return { backgroundColor: Colors.dangerMuted };
+  }
+}
+
+function toneColor(tone: NextAction['iconTone']): string {
+  switch (tone) {
+    case 'primary': return '#3B82F6';
+    case 'warning': return '#FCD34D';
+    case 'success': return '#6EE7B7';
+    case 'danger':  return '#FCA5A5';
+  }
+}
+
+// ─── Styles ─────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  container:   { flex: 1, backgroundColor: Colors.background },
-  center:      { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
-  errorText:   { color: Colors.textSecondary, fontSize: 15 },
-  retryBtn:    { backgroundColor: Colors.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
-  retryText:   { color: '#fff', fontWeight: '600' },
-  header:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: Colors.border, backgroundColor: Colors.surface },
-  backBtn:     { minWidth: 32 },
-  backText:    { fontSize: 22, color: Colors.primary },
-  headerTitle: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '700', color: Colors.textPrimary },
-  slugText:    { fontSize: 12, color: Colors.textMuted, fontWeight: '600' },
-  content:     { padding: 16, gap: 4, paddingBottom: 24 },
-  section:     { backgroundColor: Colors.surface, borderRadius: 12, padding: 16, marginBottom: 10 },
-  description: { fontSize: 17, fontWeight: '600', color: Colors.textPrimary, marginBottom: 8 },
-  amountRow:   { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
-  amount:      { fontSize: 28, fontWeight: '800', color: Colors.textPrimary },
-  fee:         { fontSize: 13, color: Colors.textMuted },
-  detailRow:   { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  detailLabel: { fontSize: 13, color: Colors.textSecondary },
-  detailValue: { fontSize: 13, fontWeight: '600', color: Colors.textPrimary },
-  footer:      { padding: 16, borderTopWidth: 1, borderTopColor: Colors.border, backgroundColor: Colors.surface },
-  actions:     { gap: 10 },
-  infoBox:     { backgroundColor: Colors.primary + '10', borderRadius: 10, padding: 14, alignItems: 'center' },
-  infoText:    { fontSize: 14, color: Colors.primary, fontWeight: '600' },
+  scroll: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    paddingBottom: 100,
+  },
+
+  hero: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radii.lg,
+    padding: Spacing.lg,
+    marginBottom: Spacing.md,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  heroGlow: {
+    position: 'absolute',
+    top: -40, right: -40,
+    width: 220, height: 220,
+    borderRadius: 110,
+    backgroundColor: 'rgba(37, 99, 235, 0.25)',
+    opacity: 0.5,
+  },
+  heroLabel: {
+    ...Typography.label,
+    fontSize: 10,
+    color: Colors.textMuted,
+  },
+  heroAmount: {
+    ...Typography.displayLg,
+    fontSize: 32,
+    lineHeight: 38,
+    color: Colors.textPrimary,
+    marginTop: 4,
+  },
+
+  nextCard: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radii.lg,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  nextCardUrgent: {
+    borderColor: 'rgba(245, 158, 11, 0.40)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.30,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  nextHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginBottom: Spacing.xs,
+  },
+  nextIcon: {
+    width: 28, height: 28,
+    borderRadius: 9,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  nextTitle: {
+    ...Typography.h3,
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    flex: 1,
+  },
+  nextBody: {
+    ...Typography.body,
+    fontSize: 13,
+    color: Colors.textSecondary,
+    lineHeight: 19,
+    marginBottom: Spacing.md,
+  },
+
+  sectionLabel: {
+    ...Typography.label,
+    fontSize: 11,
+    color: Colors.textMuted,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.sm,
+  },
+
+  detail: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radii.lg,
+    paddingHorizontal: Spacing.md,
+  },
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.divider,
+    gap: Spacing.md,
+  },
+  rowLast: { borderBottomWidth: 0 },
+  rowLabel: {
+    ...Typography.bodySm,
+    fontSize: 13,
+    color: Colors.textSecondary,
+  },
+  rowValue: {
+    ...Typography.bodySm,
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+    flex: 1,
+    textAlign: 'right',
+  },
+  rowValueMono: {
+    fontFamily: 'Menlo',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+
+  archiveWrap: {
+    marginTop: Spacing.lg,
+  },
+
+  photoRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+    flexWrap: 'wrap',
+  },
+  photoThumb: {
+    width: 60, height: 60,
+    borderRadius: Radii.md,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoAdd: {
+    backgroundColor: 'transparent',
+    borderStyle: 'dashed',
+    borderColor: 'rgba(255,255,255,0.20)',
+  },
 });

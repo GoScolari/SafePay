@@ -1,132 +1,207 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
-import { useAuth } from '@/hooks/useAuth';
-import { Colors } from '@/constants/colors';
+import React, { useEffect, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 
-const OTP_TTL = 120; // segundos
+import { ScreenContainer } from '@/components/chrome/ScreenContainer';
+import { AppHeader } from '@/components/chrome/AppHeader';
+import { OtpInput } from '@/components/forms/OtpInput';
+import { useToast } from '@/components/chrome/Toast';
+import { useAuth } from '@/hooks/useAuth';
+import { formatChileanPhone } from '@/components/forms/PhoneInput';
+
+import { Colors } from '@/constants/colors';
+import { Radii, Spacing, Typography } from '@/constants/theme';
+
+const RESEND_SECONDS = 60;
+const OTP_LENGTH = 6;
 
 export default function VerifyOtpScreen() {
-  const { phone } = useLocalSearchParams<{ phone: string }>();
-  const [code, setCode] = useState('');
-  const [secondsLeft, setSecondsLeft] = useState(OTP_TTL);
-  const inputRef = useRef<TextInput>(null);
-  const { loading, error, verifyOtp, login, clearError } = useAuth();
+  const router = useRouter();
+  const toast = useToast();
+  const { phone, mode, postPayTx } = useLocalSearchParams<{
+    phone: string;
+    mode: 'login' | 'register';
+    postPayTx?: string;
+  }>();
+  const { verifyOtp, sendOtp, isPending } = useAuth();
+
+  const [error, setError] = useState(false);
+  const [remaining, setRemaining] = useState(RESEND_SECONDS);
 
   useEffect(() => {
-    if (secondsLeft <= 0) return;
-    const timer = setInterval(() => setSecondsLeft((s) => s - 1), 1000);
-    return () => clearInterval(timer);
-  }, [secondsLeft]);
+    if (remaining <= 0) return;
+    const t = setInterval(() => setRemaining(r => Math.max(0, r - 1)), 1000);
+    return () => clearInterval(t);
+  }, [remaining]);
 
-  const formatTime = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-
-  const expired = secondsLeft <= 0;
-
-  const handleSubmit = () => {
-    if (code.length !== 6 || expired) return;
-    verifyOtp({ phone, code });
+  const handleComplete = async (code: string) => {
+    if (isPending) return;
+    setError(false);
+    try {
+      await verifyOtp({ phone: `+56${phone}`, code });
+      if (postPayTx) {
+        router.replace(`/transactions/${postPayTx}` as never);
+      } else {
+        router.replace('/(app)' as never);
+      }
+    } catch {
+      setError(true);
+      toast.error('Código incorrecto', 'Revisá el SMS y reintentá.');
+    }
   };
 
-  const handleResend = useCallback(() => {
-    clearError();
-    setCode('');
-    setSecondsLeft(OTP_TTL);
-    login({ phone });
-  }, [phone]);
+  const handleResend = async () => {
+    if (remaining > 0) return;
+    try {
+      await sendOtp({ phone: `+56${phone}`, mode: mode ?? 'login' });
+      setRemaining(RESEND_SECONDS);
+      toast.success('Código reenviado');
+    } catch {
+      toast.error('No pudimos reenviar el código');
+    }
+  };
+
+  const displayPhone = `+56 ${formatChileanPhone(phone ?? '')}`;
 
   return (
-    <View style={styles.container}>
-      <View style={styles.inner}>
-        <Text style={styles.logo}>SafePay</Text>
-        <Text style={styles.title}>Verificar teléfono</Text>
-        <Text style={styles.subtitle}>
-          Ingresá el código de 6 dígitos{'\n'}que enviamos a <Text style={styles.phone}>{phone}</Text>
-        </Text>
+    <ScreenContainer padding={false} edges={['top']}>
+      <AppHeader
+        variant="back"
+        title="Verificación"
+        onBack={() => router.back()}
+      />
 
-        <TouchableOpacity activeOpacity={0.8} onPress={() => inputRef.current?.focus()}>
-          <View style={styles.codeBox}>
-            <TextInput
-              ref={inputRef}
-              style={styles.hiddenInput}
-              keyboardType="number-pad"
-              maxLength={6}
-              value={code}
-              onChangeText={(t) => { setCode(t.replace(/\D/g, '')); clearError(); }}
-              autoFocus
-              editable={!expired}
-            />
-            {Array.from({ length: 6 }).map((_, i) => (
-              <View key={i} style={[styles.digit, code.length === i && !expired && styles.digitActive, expired && styles.digitExpired]}>
-                <Text style={styles.digitText}>{code[i] ?? ''}</Text>
-              </View>
-            ))}
-          </View>
-        </TouchableOpacity>
-
-        {/* Contador */}
-        {expired ? (
-          <Text style={styles.timerExpired}>Código expirado — reenviar para continuar</Text>
-        ) : (
-          <Text style={[styles.timer, secondsLeft <= 30 && styles.timerWarning]}>
-            El código expira en <Text style={{ fontWeight: '700' }}>{formatTime(secondsLeft)}</Text>
+      <View style={styles.content}>
+        <View style={styles.titleBlock}>
+          <Text style={styles.title}>Ingresá el código</Text>
+          <Text style={styles.target}>
+            Te enviamos un SMS a{' '}
+            <Text style={styles.targetStrong}>{displayPhone}</Text>
           </Text>
+        </View>
+
+        <View style={styles.otpWrap}>
+          <OtpInput
+            length={OTP_LENGTH}
+            onComplete={handleComplete}
+            onChange={() => error && setError(false)}
+            error={error}
+            disabled={isPending}
+          />
+        </View>
+
+        <View style={styles.resendRow}>
+          {remaining > 0 ? (
+            <Text style={styles.resendDisabled}>
+              Reenviar código en{' '}
+              <Text style={styles.resendStrong}>
+                0:{remaining.toString().padStart(2, '0')}
+              </Text>
+            </Text>
+          ) : (
+            <Pressable onPress={handleResend}>
+              <Text style={styles.resendActive}>Reenviar código</Text>
+            </Pressable>
+          )}
+        </View>
+
+        {isPending && (
+          <View style={styles.verifying}>
+            <Text style={styles.verifyingText}>Verificando…</Text>
+          </View>
         )}
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+        <View style={styles.flex} />
 
-        <TouchableOpacity
-          style={[styles.btn, (loading || code.length !== 6 || expired) && styles.btnDisabled]}
-          onPress={handleSubmit}
-          disabled={loading || code.length !== 6 || expired}
-        >
-          {loading
-            ? <ActivityIndicator color="#fff" />
-            : <Text style={styles.btnText}>Verificar</Text>
-          }
-        </TouchableOpacity>
-
-        <TouchableOpacity onPress={handleResend} disabled={loading} style={styles.resendBtn}>
-          <Text style={[styles.resendText, expired && styles.resendTextHighlight]}>
-            {expired ? '↻ Reenviar código' : 'Reenviar código'}
-          </Text>
-        </TouchableOpacity>
+        <View style={styles.changeWrap}>
+          <Pressable onPress={() => router.back()}>
+            <Text style={styles.changeLink}>Cambiar número</Text>
+          </Pressable>
+        </View>
       </View>
-    </View>
+    </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  container:         { flex: 1, backgroundColor: Colors.background },
-  inner:             { flex: 1, justifyContent: 'center', paddingHorizontal: 28, gap: 16 },
-  logo:              { fontSize: 36, fontWeight: '800', color: Colors.primary, textAlign: 'center' },
-  title:             { fontSize: 22, fontWeight: '700', color: Colors.textPrimary, textAlign: 'center' },
-  subtitle:          { fontSize: 15, color: Colors.textSecondary, textAlign: 'center', lineHeight: 22 },
-  phone:             { fontWeight: '700', color: Colors.textPrimary },
-  codeBox:           { flexDirection: 'row', justifyContent: 'center', gap: 10, position: 'relative' },
-  hiddenInput:       { position: 'absolute', opacity: 0, width: 1, height: 1 },
-  digit:             {
-    width: 46, height: 56,
-    borderWidth: 1.5, borderColor: Colors.border, borderRadius: 10,
-    backgroundColor: Colors.surface,
-    justifyContent: 'center', alignItems: 'center',
+  flex: { flex: 1 },
+  content: {
+    flex: 1,
+    paddingHorizontal: Spacing.xxl,
+    paddingBottom: Spacing.xl,
   },
-  digitActive:       { borderColor: Colors.primary },
-  digitExpired:      { borderColor: Colors.textMuted, backgroundColor: Colors.background },
-  digitText:         { fontSize: 22, fontWeight: '700', color: Colors.textPrimary },
-  timer:             { fontSize: 13, color: Colors.textSecondary, textAlign: 'center' },
-  timerWarning:      { color: Colors.warning },
-  timerExpired:      { fontSize: 13, color: Colors.danger, textAlign: 'center', fontWeight: '600' },
-  error:             { fontSize: 13, color: Colors.danger, textAlign: 'center' },
-  btn:               {
-    backgroundColor: Colors.primary,
-    borderRadius: 10,
-    paddingVertical: 15,
+  titleBlock: {
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.xl,
     alignItems: 'center',
   },
-  btnDisabled:       { opacity: 0.4 },
-  btnText:           { color: '#fff', fontSize: 16, fontWeight: '700' },
-  resendBtn:         { alignItems: 'center', paddingVertical: 4 },
-  resendText:        { color: Colors.primary, fontSize: 14, fontWeight: '600' },
-  resendTextHighlight: { color: Colors.primary, fontWeight: '800' },
+  title: {
+    ...Typography.h1,
+    fontSize: 26,
+    lineHeight: 32,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    textAlign: 'center',
+  },
+  target: {
+    ...Typography.body,
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginTop: Spacing.sm,
+    textAlign: 'center',
+    lineHeight: 21,
+  },
+  targetStrong: {
+    color: Colors.textPrimary,
+    fontWeight: '600',
+  },
+  otpWrap: {
+    paddingVertical: Spacing.md,
+  },
+  resendRow: {
+    paddingVertical: Spacing.sm,
+    alignItems: 'center',
+  },
+  resendDisabled: {
+    ...Typography.caption,
+    fontSize: 12,
+    color: Colors.textMuted,
+  },
+  resendStrong: {
+    color: Colors.textSecondary,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+  },
+  resendActive: {
+    ...Typography.body,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#3B82F6',
+  },
+  verifying: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(16, 185, 129, 0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.30)',
+    borderRadius: Radii.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    marginTop: Spacing.md,
+  },
+  verifyingText: {
+    ...Typography.caption,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6EE7B7',
+  },
+  changeWrap: {
+    alignItems: 'center',
+    paddingTop: Spacing.md,
+  },
+  changeLink: {
+    ...Typography.body,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#3B82F6',
+  },
 });

@@ -1,213 +1,395 @@
-import {
-  View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Alert,
-} from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { api } from '@/lib/api';
-import { Transaction } from '@/stores/transaction.store';
-import { Colors } from '@/constants/colors';
-import { formatCLP } from '@/lib/utils';
-import { useAuthStore } from '@/stores/auth.store';
+/**
+ * SafePay · TxPublicScreen · app/tx/[slug].tsx
+ *
+ * Deep link público · safepay.cl/tx/:slug. Sin auth requerida.
+ *
+ * Pantalla que ve el comprador anónimo al hacer click en el link
+ * compartido por el vendedor. Muestra resumen del producto, total
+ * a pagar con desglose, cómo funciona SafePay, y CTA a checkout.
+ *
+ * Datos vía GET /transactions/public/:slug.
+ */
 
-const FEE_PAYER_LABEL: Record<string, string> = {
-  buyer:  'La paga el comprador',
-  seller: 'La paga el vendedor',
-  split:  'Mitad y mitad',
-};
+import React from 'react';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Feather } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useQuery } from '@tanstack/react-query';
+
+import { ScreenContainer } from '@/components/chrome/ScreenContainer';
+import { AppHeader } from '@/components/chrome/AppHeader';
+import { ActionButton } from '@/components/ActionButton';
+import { EmptyState } from '@/components/chrome/EmptyState';
+
+import { api } from '@/lib/api';
+import { Colors } from '@/constants/colors';
+import { Radii, Shadows, Spacing, Typography } from '@/constants/theme';
+import { formatCLP } from '@/lib/utils';
+
+// ─── Tipos ──────────────────────────────────────────────────────────────────
+
+interface PublicTransaction {
+  id: string;
+  slug: string;
+  title?: string;
+  description: string;
+  modality: 'shipping' | 'presential';
+  amount: number;
+  fee: number;
+  feePayer: 'buyer' | 'seller' | 'split';
+  initiatorRole: 'buyer' | 'seller';
+  sellerName?: string;
+  initiator?: { fullName: string };
+  status: 'PROPUESTA' | 'CONFIRMADA' | 'PAGADO' | 'EXPIRADO' | 'CANCELADO';
+  thumbnailUrl?: string | null;
+  expiresAt?: string | null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Component
+// ═══════════════════════════════════════════════════════════════════════════
 
 export default function TxPublicScreen() {
+  const router = useRouter();
   const { slug } = useLocalSearchParams<{ slug: string }>();
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const setPendingTx    = useAuthStore((s) => s.setPendingTx);
 
-  const [initiating, setInitiating] = useState(false);
-
-  const { data: tx, isLoading, isError } = useQuery<Transaction>({
+  const { data: tx, isLoading, isError } = useQuery<PublicTransaction>({
     queryKey: ['tx-public', slug],
-    queryFn: () => api.get<Transaction>(`/transactions/public/${slug}`).then((r) => r.data),
+    queryFn: () => api.get<PublicTransaction>(`/transactions/public/${slug}`).then((r) => r.data),
     enabled: !!slug,
     retry: false,
   });
 
-  if (isLoading) {
+  if (isError || (!isLoading && !tx)) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator color={Colors.primary} size="large" />
-        <Text style={styles.hint}>Cargando transacción…</Text>
-      </View>
+      <ScreenContainer edges={['top']}>
+        <AppHeader variant="back" title="safepay.cl" onBack={() => router.replace('/(auth)/welcome' as never)} />
+        <EmptyState
+          tone="warning"
+          icon="alert-circle"
+          title="Link no válido"
+          body="La transacción no existe, ya fue pagada, o expiró. Pedile al vendedor que genere un link nuevo."
+        />
+      </ScreenContainer>
     );
   }
 
-  if (isError || !tx) {
+  if (isLoading || !tx) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.errorEmoji}>🔍</Text>
-        <Text style={styles.errorTitle}>Transacción no encontrada</Text>
-        <Text style={styles.errorSub}>El link puede estar expirado o ser incorrecto.</Text>
-      </View>
+      <ScreenContainer edges={['top']}>
+        <AppHeader variant="back" title="safepay.cl" onBack={() => router.replace('/(auth)/welcome' as never)} />
+      </ScreenContainer>
     );
   }
 
-  // Flujo A: vendedor inicia → comprador confirma desde este link
-  const canConfirm = tx.status === 'PROPUESTA' && tx.initiatorRole === 'seller';
-  // Flujo B: comprador inicia → vendedor debe aceptar desde la app autenticada
-  const needsSellerAccept = tx.status === 'PROPUESTA' && tx.initiatorRole === 'buyer';
-
-  const STATUS_MSG: Record<string, { emoji: string; msg: string }> = {
-    CONFIRMADA:  { emoji: '✅', msg: 'Transacción confirmada. Ingresá a la app para pagar.' },
-    PAGADO:      { emoji: '💰', msg: 'Esta transacción ya fue pagada.' },
-    EN_TRANSITO: { emoji: '📦', msg: 'El artículo está en camino.' },
-    ENTREGADO:   { emoji: '🏠', msg: 'El artículo fue entregado.' },
-    COMPLETADO:  { emoji: '🎉', msg: 'Esta transacción fue completada.' },
-    CANCELADO:   { emoji: '✖️', msg: 'Esta transacción fue cancelada.' },
-    EN_DISPUTA:  { emoji: '⚠️', msg: 'Esta transacción está en disputa.' },
-    REEMBOLSADO: { emoji: '↩️', msg: 'Esta transacción fue reembolsada.' },
-    EXPIRADO:    { emoji: '⏰', msg: 'Esta transacción expiró.' },
-  };
-
-  if (needsSellerAccept) {
-    if (isAuthenticated) {
-      router.replace(`/(app)/transactions/${tx.id}` as never);
-      return <View style={styles.center}><ActivityIndicator color={Colors.primary} size="large" /></View>;
-    }
-    return (
-      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-        <View style={styles.center}>
-          <Text style={styles.logoSolo}>SafePay</Text>
-          <Text style={styles.errorEmoji}>🤝</Text>
-          <Text style={styles.errorTitle}>Te invitaron a vender</Text>
-          <Text style={styles.errorSub}>
-            El comprador quiere comprar "{tx.description}" por {formatCLP(tx.amount)}.{'\n'}
-            Ingresá a tu cuenta para aceptar o rechazar la transacción.
-          </Text>
-          <TouchableOpacity
-            style={styles.loginBtn}
-            onPress={() => router.push('/(auth)/login' as never)}
-          >
-            <Text style={styles.loginBtnText}>Iniciar sesión para aceptar</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  if (!canConfirm) {
-    const info = STATUS_MSG[tx.status] ?? { emoji: '❓', msg: 'Estado desconocido.' };
-    return (
-      <View style={styles.center}>
-        <Text style={styles.errorEmoji}>{info.emoji}</Text>
-        <Text style={styles.errorSub}>{info.msg}</Text>
-      </View>
-    );
-  }
-
-  const handleConfirm = async () => {
-    if (!isAuthenticated) {
-      setPendingTx(tx.id);
-      router.push('/(auth)/login' as never);
-      return;
-    }
-    setInitiating(true);
-    try {
-      await api.post(`/transactions/${tx.id}/accept`);
-      router.replace(`/(app)/transactions/${tx.id}` as never);
-    } catch (e: any) {
-      const msg = e?.response?.data?.message ?? 'No se pudo confirmar la transacción.';
-      Alert.alert('Error', msg);
-    } finally {
-      setInitiating(false);
-    }
-  };
-
-  const buyerTotal = tx.feePayer === 'buyer' ? tx.amount + tx.fee
-    : tx.feePayer === 'split' ? tx.amount + Math.ceil(tx.fee / 2)
-    : tx.amount;
+  const sellerName = tx.sellerName ?? tx.initiator?.fullName ?? '—';
+  const totalToBuyer = computeBuyerTotal(tx);
+  const txTitle = tx.title ?? tx.description;
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.logoRow}>
-          <Text style={styles.logo}>SafePay</Text>
-          <Text style={styles.logoSub}>Pago en custodia</Text>
-        </View>
+    <ScreenContainer padding={false} edges={['top']}>
+      <AppHeader
+        variant="back"
+        title="safepay.cl"
+        onBack={() => router.replace('/(auth)/welcome' as never)}
+      />
 
-        <View style={styles.card}>
-          <Text style={styles.description}>{tx.description}</Text>
-          <Text style={styles.amount}>{formatCLP(buyerTotal)}</Text>
-          <Text style={styles.amountSub}>Total a pagar (incluye comisión)</Text>
-        </View>
-
-        <View style={styles.section}>
-          <DetailRow label="Vendedor"   value={(tx as any).initiatorName ?? tx.initiator?.fullName ?? '—'} />
-          <DetailRow label="Comisión"   value={`${formatCLP(tx.fee)} — ${FEE_PAYER_LABEL[tx.feePayer]}`} />
-          <DetailRow label="Modalidad"  value={tx.modality === 'shipping' ? '📦 Con envío' : '🤝 Presencial'} />
-        </View>
-
-        <View style={styles.trustBox}>
-          <Text style={styles.trustText}>
-            🔒 Tu dinero queda retenido en SafePay hasta que confirmes que recibiste el artículo en buenas condiciones.
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Hero */}
+        <View style={styles.hero}>
+          <View style={styles.shield}>
+            <LinearGradient
+              colors={['#3B82F6', '#1D4ED8']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            <Feather name="shield" size={26} color="#fff" />
+          </View>
+          <Text style={styles.tagline}>PAGO PROTEGIDO POR SAFEPAY</Text>
+          <Text style={styles.title}>Tenés una transacción pendiente</Text>
+          <Text style={styles.subtitle}>
+            El vendedor inicia una venta protegida. Tu dinero queda retenido
+            hasta que confirmes la entrega.
           </Text>
+        </View>
+
+        {/* Product card */}
+        <View style={styles.product}>
+          <View style={styles.productThumb}>
+            <Feather name="image" size={24} color={Colors.textMuted} />
+          </View>
+          <View style={styles.productInfo}>
+            <Text style={styles.productTitle} numberOfLines={2}>{txTitle}</Text>
+            <Text style={styles.productMeta}>
+              Vendedor · <Text style={styles.productMetaStrong}>{sellerName}</Text>
+            </Text>
+            <Text style={styles.productMeta}>
+              Modo · {tx.modality === 'shipping' ? 'Envío por courier' : 'Encuentro presencial'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Total breakdown */}
+        <View style={styles.totalCard}>
+          <Text style={styles.totalLabel}>Total a pagar</Text>
+          <Text style={styles.totalVal}>{formatCLP(totalToBuyer)}</Text>
+          <View style={styles.breakdown}>
+            <Text style={styles.breakdownText}>Producto · {formatCLP(tx.amount)}</Text>
+            {totalToBuyer > tx.amount && (
+              <Text style={styles.breakdownText}>
+                Servicio · {formatCLP(totalToBuyer - tx.amount)}
+              </Text>
+            )}
+          </View>
+        </View>
+
+        {/* Cómo funciona */}
+        <Text style={styles.sectionLabel}>Cómo funciona</Text>
+        <View style={styles.howList}>
+          <HowRow
+            num={1}
+            text={
+              <>
+                <Text style={styles.howStrong}>Pagás vía Mercado Pago.</Text>{' '}
+                Tu dinero queda en custodia, no le llega al vendedor todavía.
+              </>
+            }
+          />
+          <HowRow
+            num={2}
+            text={
+              tx.modality === 'shipping' ? (
+                <>
+                  <Text style={styles.howStrong}>Recibís el producto.</Text>{' '}
+                  SafePay rastrea el envío con el courier.
+                </>
+              ) : (
+                <>
+                  <Text style={styles.howStrong}>Se encuentran en persona.</Text>{' '}
+                  Inspeccionás el producto con calma. Sin efectivo.
+                </>
+              )
+            }
+          />
+          <HowRow
+            num={3}
+            text={
+              <>
+                <Text style={styles.howStrong}>Confirmás la recepción.</Text>{' '}
+                Recién ahí liberamos el pago al vendedor.
+              </>
+            }
+          />
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={[styles.payBtn, initiating && styles.payBtnDisabled]}
-          onPress={handleConfirm}
-          disabled={initiating}
-        >
-          {initiating
-            ? <ActivityIndicator color="#fff" />
-            : <Text style={styles.payBtnText}>Confirmar transacción</Text>
-          }
-        </TouchableOpacity>
+      {/* Bottom fixed bar */}
+      <View style={styles.bottomBar}>
+        <ActionButton
+          label="Pagar con Mercado Pago"
+          fullWidth
+          onPress={() => router.push(`/transactions/pay?slug=${tx.slug}` as never)}
+          rightIcon={<Feather name="arrow-right" size={16} color={Colors.textOnPrimary} />}
+        />
+        <Text style={styles.disclaimer}>
+          Al pagar aceptás los términos de SafePay y la política de retención.
+        </Text>
       </View>
-    </SafeAreaView>
+    </ScreenContainer>
   );
 }
 
-function DetailRow({ label, value }: { label: string; value: string }) {
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function computeBuyerTotal(tx: PublicTransaction): number {
+  if (tx.feePayer === 'buyer')  return tx.amount + tx.fee;
+  if (tx.feePayer === 'split')  return tx.amount + Math.ceil(tx.fee / 2);
+  return tx.amount;
+}
+
+function HowRow({ num, text }: { num: number; text: React.ReactNode }) {
   return (
-    <View style={styles.detailRow}>
-      <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={styles.detailValue}>{value}</Text>
+    <View style={styles.howRow}>
+      <View style={styles.howNum}>
+        <Text style={styles.howNumText}>{num}</Text>
+      </View>
+      <Text style={styles.howText}>{text}</Text>
     </View>
   );
 }
 
+// ─── Styles ──────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  container:    { flex: 1, backgroundColor: Colors.background },
-  fullScreen:   { flex: 1, backgroundColor: Colors.background },
-  center:       { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 10, padding: 24 },
-  content:      { padding: 16, paddingBottom: 32, gap: 4 },
-  hint:         { color: Colors.textSecondary, marginTop: 8 },
-  logoRow:      { alignItems: 'center', paddingVertical: 24 },
-  logo:         { fontSize: 28, fontWeight: '800', color: Colors.primary },
-  logoSub:      { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
-  card:         { backgroundColor: Colors.surface, borderRadius: 16, padding: 20, alignItems: 'center', gap: 6, marginBottom: 10 },
-  description:  { fontSize: 16, fontWeight: '600', color: Colors.textPrimary, textAlign: 'center' },
-  amount:       { fontSize: 36, fontWeight: '800', color: Colors.textPrimary },
-  amountSub:    { fontSize: 12, color: Colors.textMuted },
-  section:      { backgroundColor: Colors.surface, borderRadius: 12, padding: 16, marginBottom: 10 },
-  detailRow:    { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  detailLabel:  { fontSize: 13, color: Colors.textSecondary },
-  detailValue:  { fontSize: 13, fontWeight: '600', color: Colors.textPrimary, maxWidth: '60%', textAlign: 'right' },
-  trustBox:     { backgroundColor: Colors.primary + '0F', borderRadius: 10, padding: 14 },
-  trustText:    { fontSize: 12, color: Colors.primary, lineHeight: 18 },
-  footer:       { padding: 16, borderTopWidth: 1, borderTopColor: Colors.border, backgroundColor: Colors.surface },
-  payBtn:       { backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 16, alignItems: 'center' },
-  payBtnDisabled: { opacity: 0.5 },
-  payBtnText:   { color: '#fff', fontSize: 16, fontWeight: '700' },
-  errorEmoji:   { fontSize: 48 },
-  errorTitle:   { fontSize: 18, fontWeight: '700', color: Colors.textPrimary },
-  errorSub:     { fontSize: 14, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
-  logoSolo:     { fontSize: 24, fontWeight: '800', color: Colors.primary, marginBottom: 8 },
-  loginBtn:     { marginTop: 24, backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 14, paddingHorizontal: 32 },
-  loginBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  wvHeader:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: Colors.border, backgroundColor: Colors.surface },
-  backBtn:      { minWidth: 32 },
-  backText:     { fontSize: 20, color: Colors.primary },
-  wvTitle:      { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '700', color: Colors.textPrimary },
+  scroll: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.xs,
+    paddingBottom: 180,
+  },
+
+  hero: {
+    paddingVertical: Spacing.xl,
+    alignItems: 'center',
+  },
+  shield: {
+    width: 56, height: 56,
+    borderRadius: Radii.lg,
+    alignItems: 'center', justifyContent: 'center',
+    overflow: 'hidden',
+    marginBottom: Spacing.md,
+    ...Shadows.glow,
+  },
+  tagline: {
+    ...Typography.label,
+    fontSize: 10,
+    color: '#93C5FD',
+    marginBottom: Spacing.sm,
+  },
+  title: {
+    ...Typography.h2,
+    fontSize: 22,
+    lineHeight: 26,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    textAlign: 'center',
+  },
+  subtitle: {
+    ...Typography.bodySm,
+    fontSize: 13,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 19,
+    marginTop: 6,
+    paddingHorizontal: Spacing.md,
+  },
+
+  product: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radii.lg,
+    padding: Spacing.md,
+    marginBottom: Spacing.sm,
+  },
+  productThumb: {
+    width: 56, height: 56,
+    borderRadius: Radii.md,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  productInfo: { flex: 1, minWidth: 0 },
+  productTitle: {
+    ...Typography.h3,
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+    lineHeight: 18,
+  },
+  productMeta: {
+    ...Typography.caption,
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginTop: 4,
+  },
+  productMetaStrong: { color: Colors.textPrimary, fontWeight: '600' },
+
+  totalCard: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radii.lg,
+    padding: Spacing.lg,
+    marginTop: Spacing.xs,
+  },
+  totalLabel: {
+    ...Typography.label,
+    fontSize: 10,
+    color: Colors.textMuted,
+  },
+  totalVal: {
+    ...Typography.displayLg,
+    fontSize: 30,
+    lineHeight: 34,
+    color: Colors.textPrimary,
+    marginTop: 4,
+  },
+  breakdown: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: Spacing.sm,
+  },
+  breakdownText: {
+    ...Typography.caption,
+    fontSize: 11,
+    color: Colors.textSecondary,
+  },
+
+  sectionLabel: {
+    ...Typography.label,
+    fontSize: 11,
+    color: Colors.textMuted,
+    marginTop: Spacing.lg,
+    marginBottom: Spacing.sm,
+  },
+  howList: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radii.lg,
+    padding: Spacing.md,
+  },
+  howRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.xs,
+  },
+  howNum: {
+    width: 22, height: 22,
+    borderRadius: 11,
+    backgroundColor: Colors.primaryMuted,
+    alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
+  },
+  howNumText: {
+    color: '#93C5FD',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  howText: {
+    ...Typography.bodySm,
+    fontSize: 12,
+    color: Colors.textSecondary,
+    lineHeight: 18,
+    paddingTop: 2,
+    flex: 1,
+  },
+  howStrong: { color: Colors.textPrimary, fontWeight: '600' },
+
+  bottomBar: {
+    position: 'absolute',
+    bottom: 0, left: 0, right: 0,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.xl,
+    backgroundColor: Colors.background,
+    borderTopWidth: 1,
+    borderTopColor: Colors.divider,
+    gap: Spacing.xs,
+  },
+  disclaimer: {
+    ...Typography.caption,
+    fontSize: 10,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 15,
+  },
 });
