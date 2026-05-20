@@ -4,10 +4,12 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '@/lib/api';
-import { TransactionCard } from '@/components/TransactionCard';
+import { TransactionCard, TxCardData } from '@/components/TransactionCard';
 import { Transaction } from '@/stores/transaction.store';
 import { Colors } from '@/constants/colors';
 import { TxStatus } from '@/constants/txStatus';
+import { useAuthStore } from '@/stores/auth.store';
+import { formatDate } from '@/lib/utils';
 
 type Filter = TxStatus | null;
 
@@ -19,7 +21,26 @@ const FILTERS: { label: string; value: Filter }[] = [
   { label: 'Expiradas',    value: 'EXPIRADO' },
 ];
 
+function toCardData(tx: Transaction, userId: string): TxCardData {
+  const isInitiator = tx.initiatorId === userId;
+  const userRole: 'buyer' | 'seller' = isInitiator
+    ? tx.initiatorRole
+    : tx.initiatorRole === 'seller' ? 'buyer' : 'seller';
+  const counterpart = isInitiator ? tx.counterpart : tx.initiator;
+  return {
+    id:               tx.id,
+    status:           tx.status,
+    userRole,
+    mode:             tx.modality,
+    title:            tx.description,
+    amount:           tx.amount,
+    counterpartyName: counterpart?.fullName ?? null,
+    timeLabel:        formatDate(tx.createdAt),
+  };
+}
+
 export default function ArchivedTransactionsScreen() {
+  const user = useAuthStore((s) => s.user);
   const [filter, setFilter] = useState<Filter>(null);
 
   const { data, isLoading, isError, refetch, isRefetching } = useQuery({
@@ -77,7 +98,13 @@ export default function ArchivedTransactionsScreen() {
         <FlatList
           data={filtered}
           keyExtractor={(tx) => tx.id}
-          renderItem={({ item }) => <TransactionCard tx={item} />}
+          renderItem={({ item }) => (
+            <TransactionCard
+              tx={toCardData(item, user?.id ?? '')}
+              onPress={(card) => router.push(`/(app)/transactions/${card.id}` as never)}
+              style={{ marginHorizontal: 16, marginBottom: 8 }}
+            />
+          )}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={Colors.primary} colors={[Colors.primary]} />}
           ListEmptyComponent={
             <View style={styles.empty}>

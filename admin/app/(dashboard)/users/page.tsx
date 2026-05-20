@@ -12,11 +12,12 @@ export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [bannedOnly, setBannedOnly] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     api.get<User[]>('/admin/users')
       .then((r) => setUsers(r.data))
-      .catch(() => {})
+      .catch(() => setError('No se pudieron cargar los usuarios'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -42,6 +43,8 @@ export default function UsersPage() {
 
       {loading ? (
         <p className="text-gray-400">Cargando...</p>
+      ) : error ? (
+        <p className="text-red-500">{error}</p>
       ) : (
         <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
           <table className="w-full text-sm">

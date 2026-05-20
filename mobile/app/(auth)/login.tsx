@@ -13,7 +13,7 @@ export default function LoginScreen() {
 
   const borderColor = digits.length === 0
     ? Colors.border
-    : isValid ? Colors.secondary : Colors.danger;
+    : isValid ? Colors.success : Colors.danger;
 
   const handleChange = (text: string) => {
     const raw = text.replace(/\D/g, '').slice(0, 8);

@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { FeePreview } from '@/components/FeePreview';
+import { calculateFee } from '@/lib/utils';
 import { Colors } from '@/constants/colors';
 import { Transaction } from '@/stores/transaction.store';
 
@@ -165,7 +166,7 @@ export default function NewTransactionScreen() {
               {errors.amount && <Text style={styles.error}>{errors.amount}</Text>}
 
               {amount >= 1000 && (
-                <FeePreview amount={amount} feePayer={form.feePayer ?? 'split'} initiatorRole={form.initiatorRole ?? 'seller'} />
+                <FeePreview amount={amount} fee={calculateFee(amount)} feePayer={form.feePayer ?? 'split'} viewerRole={form.initiatorRole ?? 'seller'} />
               )}
 
               <Text style={[styles.stepTitle, { marginTop: 20 }]}>Describí el artículo</Text>
@@ -190,7 +191,7 @@ export default function NewTransactionScreen() {
               <Text style={styles.stepTitle}>¿Quién paga la comisión?</Text>
               <Text style={styles.stepSub}>La comisión SafePay es de {
                 new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(
-                  require('@/lib/utils').calculateFee(amount)
+                  calculateFee(amount)
                 )
               }</Text>
 
@@ -216,7 +217,7 @@ export default function NewTransactionScreen() {
               {errors.feePayer && <Text style={styles.error}>{errors.feePayer}</Text>}
 
               {form.feePayer && amount >= 1000 && (
-                <FeePreview amount={amount} feePayer={form.feePayer} initiatorRole={form.initiatorRole ?? 'seller'} />
+                <FeePreview amount={amount} fee={calculateFee(amount)} feePayer={form.feePayer} viewerRole={form.initiatorRole ?? 'seller'} />
               )}
             </View>
           )}

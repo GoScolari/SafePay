@@ -205,7 +205,7 @@ export default function TransactionDetailScreen() {
       >
         {/* Estado */}
         <View style={styles.section}>
-          <StatusStepper status={tx.status as TxStatus} modality={tx.modality} />
+          <StatusStepper status={tx.status as TxStatus} flow={tx.modality} />
         </View>
 
         {/* Info principal */}

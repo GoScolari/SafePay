@@ -19,12 +19,15 @@ export default function TransactionsPage() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<TxStatus | ''>('');
 
+  const [error, setError] = useState('');
+
   const load = (status: TxStatus | '') => {
     setLoading(true);
+    setError('');
     const url = status ? `/admin/transactions?status=${status}` : '/admin/transactions';
     api.get<Transaction[]>(url)
       .then((r) => setTxs(r.data))
-      .catch(() => {})
+      .catch(() => setError('No se pudieron cargar las transacciones'))
       .finally(() => setLoading(false));
   };
 
@@ -54,6 +57,8 @@ export default function TransactionsPage() {
 
       {loading ? (
         <p className="text-gray-400">Cargando...</p>
+      ) : error ? (
+        <p className="text-red-500">{error}</p>
       ) : (
         <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
           <table className="w-full text-sm">

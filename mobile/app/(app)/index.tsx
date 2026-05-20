@@ -3,12 +3,31 @@ import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '@/lib/api';
-import { TransactionCard } from '@/components/TransactionCard';
+import { TransactionCard, TxCardData } from '@/components/TransactionCard';
 import { Transaction, useTransactionStore } from '@/stores/transaction.store';
 import { Colors } from '@/constants/colors';
 import { useAuthStore } from '@/stores/auth.store';
+import { formatDate } from '@/lib/utils';
 
 type Section = { title: string; data: Transaction[] };
+
+function toCardData(tx: Transaction, userId: string): TxCardData {
+  const isInitiator = tx.initiatorId === userId;
+  const userRole: 'buyer' | 'seller' = isInitiator
+    ? tx.initiatorRole
+    : tx.initiatorRole === 'seller' ? 'buyer' : 'seller';
+  const counterpart = isInitiator ? tx.counterpart : tx.initiator;
+  return {
+    id:               tx.id,
+    status:           tx.status,
+    userRole,
+    mode:             tx.modality,
+    title:            tx.description,
+    amount:           tx.amount,
+    counterpartyName: counterpart?.fullName ?? null,
+    timeLabel:        formatDate(tx.createdAt),
+  };
+}
 
 function classifyTransactions(txs: Transaction[], userId: string): Section[] {
   const attention: Transaction[] = [];
@@ -99,7 +118,13 @@ export default function HomeScreen() {
         <SectionList
           sections={sections}
           keyExtractor={(tx) => tx.id}
-          renderItem={({ item }) => <TransactionCard tx={item} />}
+          renderItem={({ item }) => (
+            <TransactionCard
+              tx={toCardData(item, user?.id ?? '')}
+              onPress={(card) => router.push(`/(app)/transactions/${card.id}`)}
+              style={{ marginHorizontal: 16, marginBottom: 8 }}
+            />
+          )}
           renderSectionHeader={({ section }) => (
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>{section.title}</Text>

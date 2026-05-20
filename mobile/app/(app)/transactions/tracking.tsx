@@ -74,10 +74,13 @@ export default function TrackingScreen() {
     enabled: !!txId,
     retry: false,
     refetchInterval: (query) =>
-      query.state.data && query.state.data.status !== 'DELIVERED' ? 60_000 : false,
+      query.state.data && (query.state.data as ShipmentStatusResponse).status !== 'DELIVERED' ? 60_000 : false,
     refetchIntervalInBackground: false,
-    onSuccess: () => setLastUpdated(new Date()),
   });
+
+  useEffect(() => {
+    if (shipment) setLastUpdated(new Date());
+  }, [shipment]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
