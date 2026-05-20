@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 
@@ -13,12 +13,12 @@ import { api } from '@/lib/api';
 import { Transaction, useTransactionStore } from '@/stores/transaction.store';
 import { useAuthStore } from '@/stores/auth.store';
 import { Colors } from '@/constants/colors';
-import { Spacing, Typography } from '@/constants/theme';
+import { Radii, Spacing, Typography } from '@/constants/theme';
 import { formatDate } from '@/lib/utils';
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 
-type Section = { title: string; emoji: string; data: Transaction[] };
+type TabKey = 'activas' | 'esperando' | 'completadas';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -40,44 +40,35 @@ function toCardData(tx: Transaction, userId: string): TxCardData {
   };
 }
 
-function classifyTransactions(txs: Transaction[], userId: string): Section[] {
-  const attention: Transaction[] = [];
-  const inProgress: Transaction[] = [];
-  const recent: Transaction[] = [];
+function classifyTab(tx: Transaction, userId: string): TabKey {
+  const TERMINAL = ['COMPLETADO', 'CANCELADO', 'REEMBOLSADO', 'EXPIRADO'];
+  if (TERMINAL.includes(tx.status)) return 'completadas';
 
-  for (const tx of txs) {
-    const isInitiator   = tx.initiatorId === userId;
-    const isCounterpart = tx.counterpartId === userId;
-    const isBuyer = (isInitiator && tx.initiatorRole === 'buyer') ||
-                    (isCounterpart && tx.initiatorRole === 'seller');
+  const isSeller =
+    (tx.initiatorId === userId && tx.initiatorRole === 'seller') ||
+    (tx.counterpartId === userId && tx.initiatorRole === 'buyer');
 
-    if (
-      (tx.status === 'PROPUESTA' && isCounterpart) ||
-      (tx.status === 'ENTREGADO' && isBuyer)
-    ) {
-      attention.push(tx);
-    } else if (['CONFIRMADA', 'PAGADO', 'EN_TRANSITO', 'EN_DISPUTA'].includes(tx.status)) {
-      inProgress.push(tx);
-    } else {
-      recent.push(tx);
-    }
+  switch (tx.status) {
+    case 'PROPUESTA':
+      return tx.counterpartId === userId ? 'activas' : 'esperando';
+    case 'CONFIRMADA':
+      return !isSeller ? 'activas' : 'esperando';
+    case 'PAGADO':
+      return isSeller ? 'activas' : 'esperando';
+    case 'EN_TRANSITO':
+      return 'esperando';
+    case 'ENTREGADO':
+      return !isSeller ? 'activas' : 'esperando';
+    case 'EN_DISPUTA':
+      return 'activas';
+    default:
+      return 'completadas';
   }
-
-  const sections: Section[] = [];
-  if (attention.length)  sections.push({ emoji: '⚡', title: 'REQUIEREN TU ATENCIÓN', data: attention });
-  if (inProgress.length) sections.push({ emoji: '🔄', title: 'EN PROGRESO',           data: inProgress });
-  if (recent.length)     sections.push({ emoji: '📋', title: 'RECIENTES',             data: recent.slice(0, 5) });
-  return sections;
 }
 
 function getAvatarLabel(fullName?: string): string {
   if (!fullName) return '?';
-  return fullName
-    .split(' ')
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
+  return fullName.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -88,6 +79,7 @@ export default function HomeScreen() {
   const user = useAuthStore((s) => s.user);
   const setTransactions = useTransactionStore((s) => s.setTransactions);
   const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabKey>('activas');
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['transactions'],
@@ -104,9 +96,25 @@ export default function HomeScreen() {
     setRefreshing(false);
   }, [refetch]);
 
-  const sections = data && user?.id ? classifyTransactions(data, user.id) : [];
-  const attentionCount = sections.find((s) => s.title.includes('ATENCIÓN'))?.data.length ?? 0;
+  const userId = user?.id ?? '';
   const firstName = user?.fullName?.split(' ')[0] ?? '';
+
+  const counts = { activas: 0, esperando: 0, completadas: 0 };
+  const tabItems: Transaction[] = [];
+
+  if (data && userId) {
+    for (const tx of data) {
+      const tab = classifyTab(tx, userId);
+      counts[tab]++;
+      if (tab === activeTab) tabItems.push(tx);
+    }
+  }
+
+  const tabs: { key: TabKey; label: string; count: number }[] = [
+    { key: 'activas',     label: 'Activas',    count: counts.activas },
+    { key: 'esperando',   label: 'Esperando',  count: counts.esperando },
+    { key: 'completadas', label: 'Completadas', count: counts.completadas },
+  ];
 
   return (
     <ScreenContainer padding={false} edges={['top']}>
@@ -118,13 +126,32 @@ export default function HomeScreen() {
         onAvatarPress={() => router.push('/(app)/profile' as never)}
       />
 
+      {/* Tab pills */}
+      <View style={styles.tabRow}>
+        {tabs.map((tab) => {
+          const active = tab.key === activeTab;
+          return (
+            <Pressable
+              key={tab.key}
+              onPress={() => setActiveTab(tab.key)}
+              style={[styles.tab, active && styles.tabActive]}
+            >
+              <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>
+                {tab.label}
+                {tab.count > 0 ? (
+                  <Text style={[styles.tabCount, active && styles.tabCountActive]}>
+                    {' '}{tab.count}
+                  </Text>
+                ) : null}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
       {isLoading && !data ? (
         <View style={styles.loadingWrap}>
-          <EmptyState
-            icon="clock"
-            title="Cargando…"
-            compact
-          />
+          <EmptyState icon="clock" title="Cargando…" compact />
         </View>
       ) : isError ? (
         <EmptyState
@@ -134,32 +161,36 @@ export default function HomeScreen() {
           body="No pudimos cargar tus transacciones."
           action={{ label: 'Reintentar', icon: 'refresh-cw', onPress: () => void refetch() }}
         />
-      ) : sections.length === 0 ? (
+      ) : tabItems.length === 0 ? (
         <EmptyState
-          icon="shield"
-          title="Sin transacciones aún"
-          body="Creá tu primera transacción para empezar a vender o comprar de forma protegida."
-          action={{
-            label: '+ Crear transacción',
-            onPress: () => router.push('/(app)/transactions/new' as never),
-          }}
+          icon={activeTab === 'completadas' ? 'check-circle' : 'shield'}
+          title={
+            activeTab === 'activas'     ? 'Sin transacciones activas' :
+            activeTab === 'esperando'   ? 'Nada esperando por ahora' :
+            'Sin transacciones completadas'
+          }
+          body={
+            activeTab === 'activas'
+              ? 'Creá tu primera transacción para empezar a vender o comprar de forma protegida.'
+              : undefined
+          }
+          action={
+            activeTab === 'activas' ? {
+              label: '+ Crear transacción',
+              onPress: () => router.push('/(app)/transactions/new' as never),
+            } : undefined
+          }
         />
       ) : (
-        <SectionList
-          sections={sections}
+        <FlatList
+          data={tabItems}
           keyExtractor={(tx) => tx.id}
           renderItem={({ item }) => (
             <TransactionCard
-              tx={toCardData(item, user?.id ?? '')}
+              tx={toCardData(item, userId)}
               onPress={(card) => router.push(`/(app)/transactions/${card.id}` as never)}
               style={styles.card}
             />
-          )}
-          renderSectionHeader={({ section }) => (
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionEmoji}>{section.emoji}</Text>
-              <Text style={styles.sectionTitle}>{section.title}</Text>
-            </View>
           )}
           refreshControl={
             <RefreshControl
@@ -170,7 +201,6 @@ export default function HomeScreen() {
             />
           }
           contentContainerStyle={styles.list}
-          stickySectionHeadersEnabled={false}
           showsVerticalScrollIndicator={false}
         />
       )}
@@ -178,7 +208,7 @@ export default function HomeScreen() {
       <FAB
         icon="plus"
         label="Nueva transacción"
-        extended={attentionCount === 0 && sections.length === 0}
+        extended={counts.activas === 0 && counts.esperando === 0}
         onPress={() => router.push('/(app)/transactions/new' as never)}
         accessibilityLabel="Crear transacción"
       />
@@ -193,26 +223,43 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
   },
+  tabRow: {
+    flexDirection: 'row',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    gap: Spacing.sm,
+  },
+  tab: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
+    borderRadius: Radii.full,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: 'transparent',
+  },
+  tabActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  tabLabel: {
+    ...Typography.caption,
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.textMuted,
+  },
+  tabLabelActive: {
+    color: '#fff',
+  },
+  tabCount: {
+    color: Colors.textMuted,
+    fontWeight: '700',
+  },
+  tabCountActive: {
+    color: 'rgba(255,255,255,0.85)',
+  },
   list: {
     paddingTop: Spacing.xs,
     paddingBottom: 120,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.xs,
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.lg,
-    paddingBottom: Spacing.sm,
-  },
-  sectionEmoji: {
-    fontSize: 13,
-  },
-  sectionTitle: {
-    ...Typography.label,
-    fontSize: 11,
-    color: Colors.textMuted,
-    letterSpacing: 0.8,
   },
   card: {
     marginHorizontal: Spacing.lg,

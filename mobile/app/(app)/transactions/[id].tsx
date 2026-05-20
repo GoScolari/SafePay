@@ -56,6 +56,7 @@ export default function TxDetailScreen() {
     cancel, cancelling,
     releasePayment, releasing,
     deliver, delivering,
+    devDeliver, devDelivering,
     archive, archiving,
     copyLink,
   } = useTransaction(id);
@@ -90,6 +91,8 @@ export default function TxDetailScreen() {
     );
   }
 
+  const isInitiator   = tx.initiatorId === userId;
+  const isCounterpart = tx.counterpartId === userId;
   const isSeller =
     (tx.initiatorId === userId && tx.initiatorRole === 'seller') ||
     (tx.counterpartId === userId && tx.initiatorRole === 'buyer');
@@ -105,6 +108,8 @@ export default function TxDetailScreen() {
 
   const nextAction = computeNextAction({
     status: tx.status,
+    isInitiator,
+    isCounterpart,
     isSeller,
     mode: tx.modality,
     txId: tx.id,
@@ -151,10 +156,12 @@ export default function TxDetailScreen() {
             onCancel={() => cancel()}
             onRelease={() => releasePayment(tx.payment?.id ?? id)}
             onDeliver={() => deliver()}
+            onDevDeliver={() => devDeliver()}
             accepting={accepting}
             cancelling={cancelling}
             releasing={releasing}
             delivering={delivering}
+            devDelivering={devDelivering}
             router={router}
             toast={toast}
           />
@@ -229,55 +236,71 @@ interface NextAction {
   title: string;
   body: string;
   urgent?: boolean;
+  devAction?: { label: string; action: 'devDeliver' };
   primary: { label: string; action: 'share' | 'route' | 'accept' | 'cancel' | 'release' | 'deliver'; route?: string };
   secondary?: { label: string; variant: 'outline' | 'danger'; action: 'share' | 'route' | 'cancel'; route?: string };
 }
 
 function computeNextAction(p: {
   status: TxStatus;
+  isInitiator: boolean;
+  isCounterpart: boolean;
   isSeller: boolean;
   mode: 'shipping' | 'presential';
   txId: string;
   paymentId?: string;
   disputeId?: string;
 }): NextAction | null {
-  const { status, isSeller, mode, txId, disputeId } = p;
+  const { status, isInitiator, isCounterpart, isSeller, mode, txId, disputeId } = p;
 
   switch (status) {
     case 'PROPUESTA':
-      if (isSeller) {
+      // El iniciador espera — sea vendedor o comprador
+      if (isInitiator) {
         return {
           key: 'waiting-counterparty',
           icon: 'clock',
           iconTone: 'primary',
           title: 'Esperando a la contraparte',
-          body: 'Compartí el link de la propuesta. Cuando el comprador acepte, podrás avanzar al pago.',
+          body: 'Compartí el link de la propuesta. Cuando la contraparte acepte, podrán avanzar al pago.',
           primary: { label: 'Copiar link', action: 'share' },
           secondary: { label: 'Cancelar', variant: 'outline', action: 'cancel' },
         };
       }
-      return {
-        key: 'accept-or-reject',
-        icon: 'check-circle',
-        iconTone: 'primary',
-        title: 'Te invitaron a una transacción',
-        body: 'El vendedor inició una propuesta. Aceptá para avanzar al pago protegido.',
-        primary: { label: 'Aceptar propuesta', action: 'accept' },
-        secondary: { label: 'Rechazar', variant: 'outline', action: 'cancel' },
-      };
+      // La contraparte puede aceptar o rechazar
+      if (isCounterpart) {
+        return {
+          key: 'accept-or-reject',
+          icon: 'check-circle',
+          iconTone: 'primary',
+          title: 'Te invitaron a una transacción',
+          body: isSeller
+            ? 'El comprador quiere comprar de forma protegida. Aceptá para avanzar.'
+            : 'El vendedor inició una propuesta. Aceptá para avanzar al pago protegido.',
+          primary: { label: 'Aceptar propuesta', action: 'accept' },
+          secondary: { label: 'Rechazar', variant: 'outline', action: 'cancel' },
+        };
+      }
+      return null;
 
     case 'CONFIRMADA':
+      if (!isSeller) {
+        return {
+          key: 'pay',
+          icon: 'credit-card',
+          iconTone: 'primary',
+          title: 'Listo para pagar',
+          body: 'Confirmaste los términos. Procedé a pagar para que SafePay retenga el dinero.',
+          primary: { label: 'Ir a pagar', action: 'route', route: `/transactions/pay?txId=${txId}` },
+        };
+      }
       return {
-        key: 'pay',
-        icon: 'credit-card',
+        key: 'waiting-confirmation',
+        icon: 'clock',
         iconTone: 'primary',
-        title: 'Listo para pagar',
-        body: isSeller
-          ? 'El comprador puede proceder con el pago en cualquier momento.'
-          : 'Confirmaste los términos. Procedé a pagar para que SafePay retenga el dinero.',
-        primary: isSeller
-          ? { label: 'Compartir link', action: 'share' }
-          : { label: 'Ir a pagar', action: 'route', route: `/transactions/pay?txId=${txId}` },
+        title: 'Esperando el pago del comprador',
+        body: 'La propuesta fue aceptada. El comprador puede proceder con el pago en cualquier momento.',
+        primary: { label: 'Compartir link', action: 'share' },
       };
 
     case 'PAGADO':
@@ -314,6 +337,7 @@ function computeNextAction(p: {
         title: 'Paquete en camino',
         body: 'SafePay rastrea el envío automáticamente. Te avisamos al confirmarse la entrega.',
         primary: { label: 'Ver estado del envío', action: 'route', route: `/transactions/tracking?txId=${txId}` },
+        devAction: isSeller ? { label: '🧪 Simular entrega', action: 'devDeliver' } : undefined,
       };
 
     case 'ENTREGADO':
@@ -371,17 +395,19 @@ interface NextActionCardProps {
   onCancel: () => void;
   onRelease: () => void;
   onDeliver: () => void;
+  onDevDeliver: () => void;
   accepting: boolean;
   cancelling: boolean;
   releasing: boolean;
   delivering: boolean;
+  devDelivering: boolean;
   router: ReturnType<typeof useRouter>;
   toast: ReturnType<typeof useToast>;
 }
 
 function NextActionCard({
-  action, onShare, onAccept, onCancel, onRelease, onDeliver,
-  accepting, cancelling, releasing, delivering, router,
+  action, onShare, onAccept, onCancel, onRelease, onDeliver, onDevDeliver,
+  accepting, cancelling, releasing, delivering, devDelivering, router,
 }: NextActionCardProps) {
   const dispatch = (act: NextAction['primary']['action'], route?: string) => {
     switch (act) {
@@ -428,6 +454,17 @@ function NextActionCard({
             fullWidth
             loading={secondaryLoading}
             onPress={() => dispatch(action.secondary!.action, action.secondary!.route)}
+          />
+        </View>
+      )}
+      {action.devAction && (
+        <View style={{ marginTop: Spacing.xs }}>
+          <ActionButton
+            variant="outline"
+            label={action.devAction.label}
+            fullWidth
+            loading={devDelivering}
+            onPress={onDevDeliver}
           />
         </View>
       )}

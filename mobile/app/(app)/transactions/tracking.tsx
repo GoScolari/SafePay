@@ -1,17 +1,27 @@
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, TextInput, TouchableOpacity,
-  ActivityIndicator, Alert, ScrollView, RefreshControl,
+  Alert, RefreshControl, ScrollView, StyleSheet, Text,
+  TextInput, View,
 } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useState, useEffect, useCallback } from 'react';
+import { Pressable } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Feather } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
+import { ScreenContainer } from '@/components/chrome/ScreenContainer';
+import { AppHeader } from '@/components/chrome/AppHeader';
+import { ActionButton } from '@/components/ActionButton';
+import { EmptyState } from '@/components/chrome/EmptyState';
+
 import { api } from '@/lib/api';
 import { Colors } from '@/constants/colors';
+import { Radii, Spacing, Typography } from '@/constants/theme';
 import { formatDate } from '@/lib/utils';
 
+// ─── Tipos ──────────────────────────────────────────────────────────────────
+
 type Courier = 'chilexpress' | 'bluexpress';
-type ShipmentStatus = 'PENDING' | 'IN_TRANSIT' | 'DELIVERED' | 'FAILED';
+type ShipmentStatus = 'pending' | 'in_transit' | 'delivered' | 'failed' | 'lost';
 
 interface ShipmentStatusResponse {
   courier: string;
@@ -22,32 +32,28 @@ interface ShipmentStatusResponse {
   deliveredAt: string | null;
 }
 
-const STATUS_LABEL: Record<ShipmentStatus, string> = {
-  PENDING:    'Pendiente de despacho',
-  IN_TRANSIT: 'En camino',
-  DELIVERED:  'Entregado',
-  FAILED:     'Error en el envío',
-};
-
-const STATUS_COLOR: Record<ShipmentStatus, string> = {
-  PENDING:    Colors.textMuted,
-  IN_TRANSIT: '#2563EB',
-  DELIVERED:  '#16A34A',
-  FAILED:     Colors.danger,
-};
-
 const COURIER_LABEL: Record<Courier, string> = {
   chilexpress: 'Chilexpress',
   bluexpress:  'BlueExpress',
 };
 
+const STATUS_META: Record<ShipmentStatus, { label: string; icon: React.ComponentProps<typeof Feather>['name']; color: string; bg: string }> = {
+  pending:    { label: 'Pendiente de despacho', icon: 'clock',        color: Colors.textMuted, bg: 'rgba(131,144,174,0.12)' },
+  in_transit: { label: 'En camino',             icon: 'truck',        color: '#3B82F6',        bg: 'rgba(37,99,235,0.12)'   },
+  delivered:  { label: 'Entregado',             icon: 'check-circle', color: Colors.success,   bg: 'rgba(16,185,129,0.12)'  },
+  failed:     { label: 'Error en el envío',     icon: 'alert-circle', color: Colors.danger,    bg: 'rgba(239,68,68,0.12)'   },
+  lost:       { label: 'Paquete perdido',       icon: 'alert-circle', color: Colors.danger,    bg: 'rgba(239,68,68,0.12)'   },
+};
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
 function useRelativeTime(date: Date | null) {
   const [label, setLabel] = useState('');
   useEffect(() => {
-    if (!date) return;
+    if (!date) { setLabel(''); return; }
     const update = () => {
       const diff = Math.floor((Date.now() - date.getTime()) / 1000);
-      if (diff < 60)       setLabel('Actualizado hace unos segundos');
+      if (diff < 60)        setLabel('Actualizado hace unos segundos');
       else if (diff < 3600) setLabel(`Actualizado hace ${Math.floor(diff / 60)} min`);
       else                  setLabel(`Actualizado hace ${Math.floor(diff / 3600)} h`);
     };
@@ -58,23 +64,40 @@ function useRelativeTime(date: Date | null) {
   return label;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Component
+// ═══════════════════════════════════════════════════════════════════════════
+
 export default function TrackingScreen() {
+  const router = useRouter();
   const { txId } = useLocalSearchParams<{ txId: string }>();
   const queryClient = useQueryClient();
 
-  const [courier, setCourier]             = useState<Courier>('chilexpress');
+  const [courier, setCourier] = useState<Courier>('chilexpress');
   const [trackingNumber, setTrackingNumber] = useState('');
-  const [lastUpdated, setLastUpdated]     = useState<Date | null>(null);
-  const [refreshing, setRefreshing]       = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
   const relativeTime = useRelativeTime(lastUpdated);
 
-  const { data: shipment, isLoading, isError, refetch } = useQuery<ShipmentStatusResponse>({
+  const { data: shipment, isLoading, isError, refetch } = useQuery<ShipmentStatusResponse | null>({
     queryKey: ['shipping', txId],
-    queryFn: () => api.get<ShipmentStatusResponse>(`/shipping/${txId}/status`).then((r) => r.data),
+    queryFn: async () => {
+      try {
+        const r = await api.get<ShipmentStatusResponse>(`/shipping/${txId}/status`);
+        return r.data;
+      } catch (e: any) {
+        // 404 = aún no hay tracking registrado → mostrar formulario
+        if (e?.response?.status === 404) return null;
+        throw e;
+      }
+    },
     enabled: !!txId,
     retry: false,
     refetchInterval: (query) =>
-      query.state.data && (query.state.data as ShipmentStatusResponse).status !== 'DELIVERED' ? 60_000 : false,
+      query.state.data && (query.state.data as ShipmentStatusResponse).status !== 'delivered'
+        ? 60_000
+        : false,
     refetchIntervalInBackground: false,
   });
 
@@ -98,6 +121,16 @@ export default function TrackingScreen() {
     onError: () => Alert.alert('Error', 'No se pudo registrar el envío. Verificá los datos.'),
   });
 
+  const { mutate: devDeliver, isPending: devDelivering } = useMutation({
+    mutationFn: () => api.post(`/shipping/dev-deliver/${txId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shipping', txId] });
+      queryClient.invalidateQueries({ queryKey: ['transaction', txId] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    },
+    onError: () => Alert.alert('Error', 'No se pudo simular la entrega.'),
+  });
+
   const handleRegister = () => {
     if (trackingNumber.trim().length === 0) {
       Alert.alert('Número requerido', 'Ingresá el número de tracking del paquete.');
@@ -106,72 +139,147 @@ export default function TrackingScreen() {
     register();
   };
 
-  // Estado del envío ya registrado
-  if (!isLoading && !isError && shipment) {
-    const color = STATUS_COLOR[shipment.status];
+  // ── Error ──
+  if (isError) {
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Text style={styles.backText}>←</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Estado del envío</Text>
-          <View style={{ minWidth: 32 }} />
-        </View>
-        <ScrollView
-          contentContainerStyle={styles.content}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
-        >
-          <View style={styles.statusCard}>
-            <View>
-              <Text style={[styles.statusLabel, { color }]}>{STATUS_LABEL[shipment.status]}</Text>
-              {relativeTime ? <Text style={styles.updatedAt}>{relativeTime}</Text> : null}
-            </View>
-            <View style={[styles.statusDot, { backgroundColor: color }]} />
-          </View>
-          <View style={styles.section}>
-            <DetailRow label="Courier"          value={COURIER_LABEL[shipment.courier as Courier] ?? shipment.courier} />
-            <DetailRow label="Número de tracking" value={shipment.trackingNumber} />
-            {shipment.rawStatus && <DetailRow label="Estado courier" value={shipment.rawStatus} />}
-            {shipment.lastCheckedAt && <DetailRow label="Última consulta" value={formatDate(shipment.lastCheckedAt)} />}
-            {shipment.deliveredAt && <DetailRow label="Entregado" value={formatDate(shipment.deliveredAt)} />}
-          </View>
-        </ScrollView>
-      </SafeAreaView>
+      <ScreenContainer edges={['top']}>
+        <AppHeader variant="back" subtitle="Envío" title="Tracking" onBack={() => router.back()} />
+        <EmptyState
+          tone="danger"
+          icon="wifi-off"
+          title="No se pudo cargar"
+          body="Verificá tu conexión y volvé a intentar."
+          action={{ label: 'Reintentar', icon: 'refresh-cw', onPress: () => void refetch() }}
+        />
+      </ScreenContainer>
     );
   }
 
-  // Formulario para registrar tracking
-  return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Text style={styles.backText}>←</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Registrar envío</Text>
-        <View style={{ minWidth: 32 }} />
-      </View>
+  // ── Envío ya registrado → mostrar estado ──
+  if (!isLoading && shipment) {
+    const meta = STATUS_META[shipment.status];
+    return (
+      <ScreenContainer padding={false} edges={['top']}>
+        <AppHeader variant="back" subtitle="Envío" title="Estado del envío" onBack={() => router.back()} />
 
-      {isLoading
-        ? <View style={styles.center}><ActivityIndicator color={Colors.primary} /></View>
-        : (
-          <ScrollView contentContainerStyle={styles.content}>
-            <Text style={styles.fieldLabel}>Courier</Text>
-            <View style={styles.courierRow}>
-              {(['chilexpress', 'bluexpress'] as Courier[]).map((c) => (
-                <TouchableOpacity
-                  key={c}
-                  style={[styles.courierCard, courier === c && styles.courierCardActive]}
-                  onPress={() => setCourier(c)}
-                >
-                  <Text style={[styles.courierText, courier === c && styles.courierTextActive]}>
-                    {COURIER_LABEL[c]}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={Colors.primary}
+              colors={[Colors.primary]}
+            />
+          }
+        >
+          {/* Status hero */}
+          <View style={[styles.statusHero, { backgroundColor: meta.bg, borderColor: meta.color + '33' }]}>
+            <View style={[styles.statusIconWrap, { backgroundColor: meta.color + '22' }]}>
+              <Feather name={meta.icon} size={24} color={meta.color} />
             </View>
+            <View style={styles.statusTextWrap}>
+              <Text style={[styles.statusLabel, { color: meta.color }]}>{meta.label}</Text>
+              {shipment.rawStatus ? (
+                <Text style={styles.statusRaw}>{shipment.rawStatus}</Text>
+              ) : null}
+              {relativeTime ? (
+                <Text style={styles.statusUpdated}>{relativeTime}</Text>
+              ) : null}
+            </View>
+          </View>
 
-            <Text style={styles.fieldLabel}>Número de tracking</Text>
+          {/* Detalle */}
+          <Text style={styles.sectionLabel}>Detalle del envío</Text>
+          <View style={styles.detailCard}>
+            <DetailRow
+              label="Courier"
+              value={COURIER_LABEL[shipment.courier as Courier] ?? shipment.courier}
+            />
+            <DetailRow
+              label="Número de tracking"
+              value={shipment.trackingNumber}
+              mono
+            />
+            {shipment.lastCheckedAt ? (
+              <DetailRow
+                label="Última consulta"
+                value={formatDate(shipment.lastCheckedAt)}
+              />
+            ) : null}
+            {shipment.deliveredAt ? (
+              <DetailRow
+                label="Entregado"
+                value={formatDate(shipment.deliveredAt)}
+                last
+              />
+            ) : (
+              <DetailRow
+                label="Estado"
+                value={shipment.status === 'in_transit' ? 'En camino al destino' : STATUS_META[shipment.status].label}
+                last
+              />
+            )}
+          </View>
+
+          {shipment.status === 'in_transit' && (
+            <>
+              <View style={styles.infoCard}>
+                <Feather name="info" size={14} color="#93C5FD" />
+                <Text style={styles.infoText}>
+                  SafePay consulta el estado del envío cada 2 horas. Podés refrescar manualmente con pull-to-refresh.
+                </Text>
+              </View>
+              <ActionButton
+                variant="outline"
+                label="🧪 Simular entrega"
+                fullWidth
+                loading={devDelivering}
+                onPress={() => devDeliver()}
+              />
+            </>
+          )}
+        </ScrollView>
+      </ScreenContainer>
+    );
+  }
+
+  // ── Formulario para registrar tracking ──
+  return (
+    <ScreenContainer padding={false} edges={['top']}>
+      <AppHeader variant="back" subtitle="Envío" title="Registrar envío" onBack={() => router.back()} />
+
+      {isLoading ? (
+        <EmptyState icon="clock" title="Cargando…" compact />
+      ) : (
+        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+          <Text style={styles.sectionLabel}>Seleccioná el courier</Text>
+          <View style={styles.courierRow}>
+            {(['chilexpress', 'bluexpress'] as Courier[]).map((c) => (
+              <Pressable
+                key={c}
+                style={[styles.courierCard, courier === c && styles.courierCardActive]}
+                onPress={() => setCourier(c)}
+              >
+                <View style={[styles.courierIcon, courier === c && styles.courierIconActive]}>
+                  <Feather name="truck" size={16} color={courier === c ? '#3B82F6' : Colors.textMuted} />
+                </View>
+                <Text style={[styles.courierLabel, courier === c && styles.courierLabelActive]}>
+                  {COURIER_LABEL[c]}
+                </Text>
+                {courier === c && (
+                  <View style={styles.courierCheck}>
+                    <Feather name="check" size={11} color="#fff" />
+                  </View>
+                )}
+              </Pressable>
+            ))}
+          </View>
+
+          <Text style={styles.sectionLabel}>Número de tracking</Text>
+          <View style={styles.inputWrap}>
+            <Feather name="hash" size={16} color={Colors.textMuted} style={styles.inputIcon} />
             <TextInput
               style={styles.input}
               value={trackingNumber}
@@ -181,57 +289,217 @@ export default function TrackingScreen() {
               maxLength={50}
               autoCapitalize="characters"
             />
+          </View>
 
-            <TouchableOpacity
-              style={[styles.btn, registering && styles.btnDisabled]}
+          <View style={styles.infoCard}>
+            <Feather name="info" size={14} color="#93C5FD" />
+            <Text style={styles.infoText}>
+              Una vez registrado, SafePay rastrea el estado con {COURIER_LABEL[courier]} automáticamente y notifica al comprador cuando el paquete sea entregado.
+            </Text>
+          </View>
+
+          <View style={styles.btnWrap}>
+            <ActionButton
+              label="Registrar envío"
+              fullWidth
+              loading={registering}
               onPress={handleRegister}
-              disabled={registering}
-            >
-              {registering
-                ? <ActivityIndicator color="#fff" />
-                : <Text style={styles.btnText}>Registrar envío</Text>
-              }
-            </TouchableOpacity>
-          </ScrollView>
-        )
-      }
-    </SafeAreaView>
+              rightIcon={<Feather name="truck" size={16} color="#fff" />}
+            />
+          </View>
+        </ScrollView>
+      )}
+    </ScreenContainer>
   );
 }
 
-function DetailRow({ label, value }: { label: string; value: string }) {
+// ─── Sub-components ──────────────────────────────────────────────────────────
+
+function DetailRow({ label, value, mono, last }: { label: string; value: string; mono?: boolean; last?: boolean }) {
   return (
-    <View style={styles.detailRow}>
-      <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={styles.detailValue}>{value}</Text>
+    <View style={[styles.row, last && styles.rowLast]}>
+      <Text style={styles.rowLabel}>{label}</Text>
+      <Text style={[styles.rowValue, mono && styles.rowValueMono]} numberOfLines={1}>
+        {value}
+      </Text>
     </View>
   );
 }
 
+// ─── Styles ──────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  container:         { flex: 1, backgroundColor: Colors.background },
-  header:            { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: Colors.border, backgroundColor: Colors.surface },
-  backBtn:           { minWidth: 32 },
-  backText:          { fontSize: 22, color: Colors.primary },
-  headerTitle:       { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '700', color: Colors.textPrimary },
-  content:           { padding: 16, gap: 4 },
-  center:            { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  statusCard:        { backgroundColor: Colors.surface, borderRadius: 12, padding: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  statusLabel:       { fontSize: 17, fontWeight: '700' },
-  updatedAt:         { fontSize: 11, color: Colors.textMuted, marginTop: 4 },
-  statusDot:         { width: 12, height: 12, borderRadius: 6 },
-  section:           { backgroundColor: Colors.surface, borderRadius: 12, padding: 16, marginBottom: 10 },
-  detailRow:         { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  detailLabel:       { fontSize: 13, color: Colors.textSecondary },
-  detailValue:       { fontSize: 13, fontWeight: '600', color: Colors.textPrimary, maxWidth: '60%', textAlign: 'right' },
-  fieldLabel:        { fontSize: 13, fontWeight: '600', color: Colors.textSecondary, marginTop: 16, marginBottom: 8 },
-  courierRow:        { flexDirection: 'row', gap: 12, marginBottom: 4 },
-  courierCard:       { flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: Colors.border, paddingVertical: 14, alignItems: 'center' },
-  courierCardActive: { borderColor: Colors.primary, backgroundColor: Colors.primary + '10' },
-  courierText:       { fontSize: 14, fontWeight: '600', color: Colors.textSecondary },
-  courierTextActive: { color: Colors.primary },
-  input:             { backgroundColor: Colors.surface, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: Colors.textPrimary, marginBottom: 4 },
-  btn:               { backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 24 },
-  btnDisabled:       { opacity: 0.5 },
-  btnText:           { color: '#fff', fontSize: 15, fontWeight: '700' },
+  scroll: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    paddingBottom: 60,
+  },
+
+  statusHero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    borderWidth: 1,
+    borderRadius: Radii.lg,
+    padding: Spacing.lg,
+    marginBottom: Spacing.md,
+  },
+  statusIconWrap: {
+    width: 48, height: 48,
+    borderRadius: Radii.md,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  statusTextWrap: { flex: 1 },
+  statusLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
+  statusRaw: {
+    ...Typography.caption,
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  statusUpdated: {
+    ...Typography.caption,
+    fontSize: 11,
+    color: Colors.textMuted,
+    marginTop: 3,
+  },
+
+  sectionLabel: {
+    ...Typography.label,
+    fontSize: 11,
+    color: Colors.textMuted,
+    marginBottom: Spacing.sm,
+    marginTop: Spacing.xs,
+  },
+
+  detailCard: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radii.lg,
+    paddingHorizontal: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.divider,
+    gap: Spacing.md,
+  },
+  rowLast: { borderBottomWidth: 0 },
+  rowLabel: {
+    ...Typography.bodySm,
+    fontSize: 13,
+    color: Colors.textSecondary,
+  },
+  rowValue: {
+    ...Typography.bodySm,
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+    flex: 1,
+    textAlign: 'right',
+  },
+  rowValueMono: {
+    fontFamily: 'Menlo',
+    fontSize: 12,
+  },
+
+  infoCard: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    backgroundColor: 'rgba(37, 99, 235, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.20)',
+    borderRadius: Radii.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+    alignItems: 'flex-start',
+  },
+  infoText: {
+    ...Typography.caption,
+    fontSize: 12,
+    color: Colors.textSecondary,
+    lineHeight: 18,
+    flex: 1,
+  },
+
+  courierRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  courierCard: {
+    flex: 1,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radii.lg,
+    padding: Spacing.md,
+    alignItems: 'center',
+    gap: Spacing.xs,
+    position: 'relative',
+  },
+  courierCardActive: {
+    borderColor: '#3B82F6',
+    backgroundColor: 'rgba(37, 99, 235, 0.08)',
+  },
+  courierIcon: {
+    width: 36, height: 36,
+    borderRadius: Radii.md,
+    backgroundColor: Colors.surfaceElevated,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  courierIconActive: {
+    backgroundColor: 'rgba(37, 99, 235, 0.15)',
+  },
+  courierLabel: {
+    ...Typography.bodySm,
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  courierLabelActive: {
+    color: '#3B82F6',
+  },
+  courierCheck: {
+    position: 'absolute',
+    top: 8, right: 8,
+    width: 16, height: 16,
+    borderRadius: Radii.full,
+    backgroundColor: '#3B82F6',
+    alignItems: 'center', justifyContent: 'center',
+  },
+
+  inputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radii.md,
+    paddingHorizontal: Spacing.md,
+    height: 52,
+    marginBottom: Spacing.md,
+  },
+  inputIcon: {
+    marginRight: Spacing.sm,
+  },
+  input: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '500',
+    color: Colors.textPrimary,
+  },
+
+  btnWrap: {
+    marginTop: Spacing.md,
+  },
 });

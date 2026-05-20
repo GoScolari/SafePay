@@ -33,6 +33,7 @@ import { formatCLP } from '@/lib/utils';
 interface InitiateResponse {
   checkoutUrl: string | null;
   paymentId: string;
+  transactionId: string;
   totalAmount?: number;
   txTitle?: string;
   shortRef?: string;
@@ -61,7 +62,7 @@ export default function PayScreen() {
       .finally(() => setIsLoading(false));
   }, [txId, slug]);
 
-  const resolvedTxId = txId ?? data?.paymentId;
+  const resolvedTxId = txId ?? data?.transactionId;
 
   const onPaymentSuccess = async () => {
     if (data?.paymentId && data.checkoutUrl === null) {

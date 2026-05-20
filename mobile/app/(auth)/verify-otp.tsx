@@ -170,7 +170,6 @@ const styles = StyleSheet.create({
   resendStrong: {
     color: Colors.textSecondary,
     fontWeight: '600',
-    fontVariant: ['tabular-nums'],
   },
   resendActive: {
     ...Typography.body,

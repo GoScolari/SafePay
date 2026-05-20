@@ -13,6 +13,7 @@ import {
 import { Request } from 'express';
 import { PaymentsService } from './payments.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { JwtOptionalGuard } from '../auth/guards/jwt-optional.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { InitiatePaymentDto } from './dto/initiate-payment.dto';
 
@@ -21,12 +22,12 @@ export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
   @Post('initiate')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOptionalGuard)
   initiate(
     @Body() dto: InitiatePaymentDto,
-    @CurrentUser() user: { id: string },
+    @CurrentUser() user: { id: string } | null,
   ) {
-    return this.paymentsService.initiate(dto, user.id);
+    return this.paymentsService.initiate(dto, user?.id ?? null);
   }
 
   @Post('release/:id')
@@ -48,7 +49,7 @@ export class PaymentsController {
 
   @Post('dev-confirm/:id')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOptionalGuard)
   devConfirm(@Param('id') id: string) {
     return this.paymentsService.devConfirm(id);
   }

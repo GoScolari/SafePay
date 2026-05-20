@@ -126,7 +126,7 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   cell: {
-    width: 44,
+    width: 52,
     height: 56,
     borderRadius: Radii.md,
     backgroundColor: Colors.surface,
@@ -157,7 +157,6 @@ const styles = StyleSheet.create({
     lineHeight: 28,
     fontWeight: '700',
     color: Colors.textPrimary,
-    fontVariant: ['tabular-nums'],
   },
   caret: {
     width: 2,

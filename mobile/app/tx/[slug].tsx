@@ -10,7 +10,7 @@
  * Datos vía GET /transactions/public/:slug.
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -23,6 +23,7 @@ import { ActionButton } from '@/components/ActionButton';
 import { EmptyState } from '@/components/chrome/EmptyState';
 
 import { api } from '@/lib/api';
+import { useAuthStore } from '@/stores/auth.store';
 import { Colors } from '@/constants/colors';
 import { Radii, Shadows, Spacing, Typography } from '@/constants/theme';
 import { formatCLP } from '@/lib/utils';
@@ -53,6 +54,9 @@ interface PublicTransaction {
 export default function TxPublicScreen() {
   const router = useRouter();
   const { slug } = useLocalSearchParams<{ slug: string }>();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const setPendingTx = useAuthStore((s) => s.setPendingTx);
+  const [accepting, setAccepting] = useState(false);
 
   const { data: tx, isLoading, isError } = useQuery<PublicTransaction>({
     queryKey: ['tx-public', slug],
@@ -86,6 +90,29 @@ export default function TxPublicScreen() {
   const sellerName = tx.sellerName ?? tx.initiator?.fullName ?? '—';
   const totalToBuyer = computeBuyerTotal(tx);
   const txTitle = tx.title ?? tx.description;
+
+  const handlePay = async () => {
+    setAccepting(true);
+    try {
+      await api.post(`/transactions/${tx.id}/accept`);
+      if (isAuthenticated) {
+        router.replace(`/(app)/transactions/${tx.id}` as never);
+      } else {
+        setPendingTx(tx.id);
+        router.replace('/(auth)/register' as never);
+      }
+    } catch {
+      // Si ya fue aceptada o da error, intentar navegar igual
+      if (isAuthenticated) {
+        router.replace(`/(app)/transactions/${tx.id}` as never);
+      } else {
+        setPendingTx(tx.id);
+        router.replace('/(auth)/register' as never);
+      }
+    } finally {
+      setAccepting(false);
+    }
+  };
 
   return (
     <ScreenContainer padding={false} edges={['top']}>
@@ -191,9 +218,10 @@ export default function TxPublicScreen() {
       {/* Bottom fixed bar */}
       <View style={styles.bottomBar}>
         <ActionButton
-          label="Pagar con Mercado Pago"
+          label="Continuar"
           fullWidth
-          onPress={() => router.push(`/transactions/pay?slug=${tx.slug}` as never)}
+          loading={accepting}
+          onPress={handlePay}
           rightIcon={<Feather name="arrow-right" size={16} color={Colors.textOnPrimary} />}
         />
         <Text style={styles.disclaimer}>

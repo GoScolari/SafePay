@@ -45,10 +45,13 @@ export class PaymentsService {
 
   async initiate(
     dto: InitiatePaymentDto,
-    userId: string,
-  ): Promise<{ checkoutUrl: string | null; paymentId: string }> {
+    userId: string | null,
+  ): Promise<{ checkoutUrl: string | null; paymentId: string; transactionId: string }> {
+    if (!dto.transactionId && !dto.slug) {
+      throw new BadRequestException('Se requiere transactionId o slug');
+    }
     const tx = await this.txRepo.findOne({
-      where: { id: dto.transactionId },
+      where: dto.transactionId ? { id: dto.transactionId } : { slug: dto.slug },
       relations: ['initiator', 'counterpart'],
     });
     if (!tx) throw new NotFoundException('Transacción no encontrada');
@@ -58,8 +61,11 @@ export class PaymentsService {
         'Solo se puede iniciar el pago en una transacción CONFIRMADA',
       );
     }
-    if (tx.initiatorId !== userId && tx.counterpartId !== userId) {
-      throw new ForbiddenException('No tenés permiso para iniciar este pago');
+    // Si viene por txId (flujo autenticado), verificar pertenencia
+    if (dto.transactionId && userId) {
+      if (tx.initiatorId !== userId && tx.counterpartId !== userId) {
+        throw new ForbiddenException('No tenés permiso para iniciar este pago');
+      }
     }
 
     // Determinar quién es el vendedor para obtener su token MP
@@ -72,7 +78,7 @@ export class PaymentsService {
       where: { transactionId: tx.id },
     });
     if (existing) {
-      return { checkoutUrl: null, paymentId: existing.id };
+      return { checkoutUrl: null, paymentId: existing.id, transactionId: tx.id };
     }
 
     const unitPrice = this.calculateUnitPrice(tx.amount, tx.fee, tx.feePayer);
@@ -125,7 +131,7 @@ export class PaymentsService {
     // Guardar sellerId en tx para usarlo en release (no existe campo aún, usamos metadata)
     void sellerId;
 
-    return { checkoutUrl, paymentId: payment.id };
+    return { checkoutUrl, paymentId: payment.id, transactionId: tx.id };
   }
 
   async handleWebhook(
