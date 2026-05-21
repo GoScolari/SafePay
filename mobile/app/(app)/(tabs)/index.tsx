@@ -1,5 +1,8 @@
-import React, { useCallback, useState } from 'react';
-import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { FlatList, LayoutAnimation, Platform, Pressable, RefreshControl, StyleSheet, Text, UIManager, View } from 'react-native';
+
+// Habilitar LayoutAnimation en Android
+if (Platform.OS === 'android') UIManager.setLayoutAnimationEnabledExperimental?.(true);
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 
@@ -80,6 +83,30 @@ export default function HomeScreen() {
   const setTransactions = useTransactionStore((s) => s.setTransactions);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('activas');
+  const [fabExpanded, setFabExpanded] = useState(false);
+  const fabTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => () => clearTimeout(fabTimerRef.current), []);
+
+  const collapseFab = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setFabExpanded(false);
+    clearTimeout(fabTimerRef.current);
+  };
+
+  const handleFabPress = () => {
+    if (fabExpanded) {
+      collapseFab();
+      router.push('/(app)/transactions/new' as never);
+    } else {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setFabExpanded(true);
+      fabTimerRef.current = setTimeout(() => {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setFabExpanded(false);
+      }, 4000);
+    }
+  };
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['transactions'],
@@ -115,6 +142,30 @@ export default function HomeScreen() {
     { key: 'esperando',   label: 'Esperando',  count: counts.esperando },
     { key: 'completadas', label: 'Completadas', count: counts.completadas },
   ];
+
+  // Usuario nuevo: cero transacciones en total
+  if (!isLoading && !isError && data?.length === 0) {
+    return (
+      <ScreenContainer padding={false} edges={['top']}>
+        <AppHeader
+          variant="home"
+          greeting={`Hola, ${firstName}`}
+          title="Transacciones"
+          avatarLabel={getAvatarLabel(user?.fullName)}
+          onAvatarPress={() => router.push('/(app)/profile' as never)}
+        />
+        <EmptyState
+          icon="shield"
+          title="Todavía no tenés transacciones"
+          body="Creá tu primera transacción segura"
+          action={{
+            label: 'Crear mi primera transacción',
+            onPress: () => router.push('/(app)/transactions/new' as never),
+          }}
+        />
+      </ScreenContainer>
+    );
+  }
 
   return (
     <ScreenContainer padding={false} edges={['top']}>
@@ -174,12 +225,7 @@ export default function HomeScreen() {
               ? 'Creá tu primera transacción para empezar a vender o comprar de forma protegida.'
               : undefined
           }
-          action={
-            activeTab === 'activas' ? {
-              label: '+ Crear transacción',
-              onPress: () => router.push('/(app)/transactions/new' as never),
-            } : undefined
-          }
+          action={undefined}
         />
       ) : (
         <FlatList
@@ -205,11 +251,15 @@ export default function HomeScreen() {
         />
       )}
 
+      {fabExpanded && (
+        <Pressable style={styles.fabOverlay} onPress={collapseFab} />
+      )}
+
       <FAB
         icon="plus"
-        label="Nueva transacción"
-        extended={counts.activas === 0 && counts.esperando === 0}
-        onPress={() => router.push('/(app)/transactions/new' as never)}
+        label="Crear transacción"
+        extended={fabExpanded}
+        onPress={handleFabPress}
         accessibilityLabel="Crear transacción"
       />
     </ScreenContainer>
@@ -219,6 +269,10 @@ export default function HomeScreen() {
 // ─── Styles ─────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
+  fabOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 9,
+  },
   loadingWrap: {
     flex: 1,
     justifyContent: 'center',

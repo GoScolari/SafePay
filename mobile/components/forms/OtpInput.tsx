@@ -63,7 +63,10 @@ export function OtpInput({
     if (digits.length === length) onComplete?.(digits);
   };
 
-  const focusInput = () => hiddenRef.current?.focus();
+  const focusInput = () => {
+    hiddenRef.current?.blur();
+    setTimeout(() => hiddenRef.current?.focus(), 100);
+  };
 
   const cells: React.ReactNode[] = [];
   for (let i = 0; i < length; i++) {

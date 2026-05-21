@@ -22,7 +22,7 @@ export function useFiles(transactionId: string) {
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['files', transactionId] });
 
-  const uploadFile = async (uri: string, mimeType: string) => {
+  const uploadFile = async (uri: string, mimeType: string): Promise<UploadedFile> => {
     setUploading(true);
     try {
       const formData = new FormData();
@@ -30,11 +30,12 @@ export function useFiles(transactionId: string) {
       // React Native FormData acepta objeto con uri/type/name
       formData.append('file', { uri, type: mimeType, name: filename } as unknown as Blob);
       formData.append('transactionId', transactionId);
-      formData.append('type', 'evidence');
-      await api.post('/files/upload', formData, {
+      formData.append('type', 'publication');
+      const { data } = await api.post<UploadedFile>('/files/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       await invalidate();
+      return data;
     } finally {
       setUploading(false);
     }

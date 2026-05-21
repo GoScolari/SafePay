@@ -5,19 +5,23 @@ import {
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useFiles } from '@/hooks/useFiles';
 import { Colors } from '@/constants/colors';
 
 export default function PhotosScreen() {
-  const { txId } = useLocalSearchParams<{ txId: string }>();
+  const { txId, fromCreate } = useLocalSearchParams<{ txId: string; fromCreate?: string }>();
+  const isFromCreate = fromCreate === 'true';
   const { files, isLoading, uploading, deleting, uploadFile, getFileUrl, deleteFile } = useFiles(txId ?? '');
   const [urls, setUrls] = useState<Record<string, string>>({});
+  const localUris = useRef<Record<string, string>>({});
 
   useEffect(() => {
     files.forEach((f) => {
-      if (!urls[f.id]) {
-        getFileUrl(f.id).then((url) => setUrls((prev) => ({ ...prev, [f.id]: url })));
+      if (!urls[f.id] && !localUris.current[f.id]) {
+        getFileUrl(f.id).then((url) => {
+          if (url) setUrls((prev) => ({ ...prev, [f.id]: url }));
+        });
       }
     });
   }, [files]);
@@ -36,7 +40,8 @@ export default function PhotosScreen() {
     if (result.canceled || !result.assets[0]) return;
     const asset = result.assets[0];
     try {
-      await uploadFile(asset.uri, asset.mimeType ?? 'image/jpeg');
+      const uploaded = await uploadFile(asset.uri, asset.mimeType ?? 'image/jpeg');
+      localUris.current[uploaded.id] = asset.uri;
     } catch {
       Alert.alert('Error', 'No se pudo subir la foto. Intentá de nuevo.');
     }
@@ -60,10 +65,18 @@ export default function PhotosScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Text style={styles.backText}>←</Text>
+        <TouchableOpacity
+          onPress={() => isFromCreate
+            ? router.replace(`/(app)/transactions/${txId}` as never)
+            : router.back()
+          }
+          style={styles.backBtn}
+        >
+          <Text style={styles.backText}>{isFromCreate ? 'Omitir' : '←'}</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Fotos de evidencia</Text>
+        <Text style={styles.headerTitle}>
+          {isFromCreate ? 'Fotos del producto' : 'Fotos de evidencia'}
+        </Text>
         <TouchableOpacity onPress={showSourcePicker} disabled={uploading} style={styles.addBtn}>
           {uploading
             ? <ActivityIndicator color={Colors.primary} size="small" />
@@ -90,8 +103,8 @@ export default function PhotosScreen() {
         )}
         {files.map((f) => (
           <View key={f.id} style={styles.thumb}>
-            {urls[f.id]
-              ? <Image source={{ uri: urls[f.id] }} style={styles.image} resizeMode="cover" />
+            {(urls[f.id] || localUris.current[f.id])
+              ? <Image source={{ uri: urls[f.id] || localUris.current[f.id] }} style={styles.image} resizeMode="cover" />
               : <View style={styles.imagePlaceholder}><ActivityIndicator color={Colors.primary} /></View>
             }
             <TouchableOpacity
@@ -107,6 +120,18 @@ export default function PhotosScreen() {
           </View>
         ))}
       </ScrollView>
+      {isFromCreate && (
+        <View style={styles.footer}>
+          <TouchableOpacity
+            style={styles.doneBtn}
+            onPress={() => router.replace(`/(app)/transactions/${txId}` as never)}
+          >
+            <Text style={styles.doneBtnText}>
+              {files.length > 0 ? `Listo · ${files.length} foto${files.length !== 1 ? 's' : ''}` : 'Ir a la transacción'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -133,4 +158,7 @@ const styles = StyleSheet.create({
   emptySub:         { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', paddingHorizontal: 24 },
   emptyBtn:         { marginTop: 16, backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 24 },
   emptyBtnText:     { color: '#fff', fontWeight: '700', fontSize: 14 },
+  footer:           { padding: 16, borderTopWidth: 1, borderTopColor: Colors.border, backgroundColor: Colors.surface },
+  doneBtn:          { backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 15, alignItems: 'center' },
+  doneBtnText:      { color: '#fff', fontSize: 16, fontWeight: '700' },
 });

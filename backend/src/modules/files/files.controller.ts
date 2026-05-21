@@ -4,6 +4,7 @@ import {
   Get,
   Delete,
   Param,
+  Query,
   Body,
   UseGuards,
   UploadedFile,
@@ -53,6 +54,14 @@ export class FilesController {
     @CurrentUser() user: { id: string },
   ) {
     return this.filesService.upload(file, dto, user.id);
+  }
+
+  @Get()
+  list(
+    @Query('transactionId') transactionId: string,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.filesService.listByTransaction(transactionId, user.id);
   }
 
   @Get(':id/url')

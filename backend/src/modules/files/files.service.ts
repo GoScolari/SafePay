@@ -44,6 +44,24 @@ export class FilesService {
     }
   }
 
+  async listByTransaction(
+    transactionId: string,
+    userId: string,
+  ): Promise<{ id: string; s3Key: string; mimeType: string; sizeBytes: number }[]> {
+    const tx = await this.txRepo.findOne({ where: { id: transactionId } });
+    if (!tx) throw new NotFoundException('Transacción no encontrada');
+    if (tx.initiatorId !== userId && tx.counterpartId !== userId) {
+      throw new ForbiddenException('No pertenecés a esta transacción');
+    }
+    const files = await this.fileRepo.find({ where: { transactionId } });
+    return files.map((f) => ({
+      id: f.id,
+      s3Key: f.s3Key,
+      mimeType: f.mimeType,
+      sizeBytes: f.sizeBytes,
+    }));
+  }
+
   async upload(
     file: Express.Multer.File,
     dto: UploadFileDto,

@@ -1,0 +1,6 @@
+1. Al ingresar el codigo para validar mi numero de telefono, si ingreso digitos pero no completo los 6, y saco el teclado de la pantalla, al querer volver a ingresar los digitos faltantes, no aparece el teclado.
+2. al ingresar despues del login, si no tengo transacciones activas, vel el boton centran "+ crear transaccion" y adicional veo "+ Nueva transaccion", deberia solo ver la primera opcion, y cuando tenga transacciones activas tiene que aparecer el boton flotante.
+3. Al momento de crear una transaccion, no me permite agregar imagenes. Si soy vendedor tengo que poder agregar descripcion y subir imagenes.Si soy comprado puedo crear una transaccion pero no requiere subir imagenes de lo comprado.
+el boton inferior que cambia segun el flujo, se monta con los botones de android, si los botones de android estan activos el boton de accion tienen que quedar por arriba de los de android.
+4. En la propuesta que le llega al receptor del link, se le iundica el producto pero no aparece el nombre del vendedor.
+5. al momento de recibir una propuesta de transaccion, tengo el boton de accion que indica continuar, este deberia decir confirmar transaccion y tiene que tener un checkbox para aceptar los terminos y condiciones.

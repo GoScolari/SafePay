@@ -48,7 +48,11 @@ export default function NewTransactionScreen() {
       }),
     onSuccess: ({ data }) => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      router.replace(`/(app)/transactions/${data.id}`);
+      if (form.initiatorRole === 'seller') {
+        router.replace(`/(app)/transactions/photos?txId=${data.id}&fromCreate=true` as never);
+      } else {
+        router.replace(`/(app)/transactions/${data.id}` as never);
+      }
     },
     onError: (e: any) => {
       setErrors({ description: e?.response?.data?.message ?? 'Error al crear. Intenta de nuevo.' });

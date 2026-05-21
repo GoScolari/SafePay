@@ -11,8 +11,9 @@
  */
 
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useQuery } from '@tanstack/react-query';
@@ -40,6 +41,7 @@ interface PublicTransaction {
   fee: number;
   feePayer: 'buyer' | 'seller' | 'split';
   initiatorRole: 'buyer' | 'seller';
+  initiatorName?: string;
   sellerName?: string;
   initiator?: { fullName: string };
   status: 'PROPUESTA' | 'CONFIRMADA' | 'PAGADO' | 'EXPIRADO' | 'CANCELADO';
@@ -53,10 +55,12 @@ interface PublicTransaction {
 
 export default function TxPublicScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const setPendingTx = useAuthStore((s) => s.setPendingTx);
   const [accepting, setAccepting] = useState(false);
+  const [accepted, setAccepted] = useState(false);
 
   const { data: tx, isLoading, isError } = useQuery<PublicTransaction>({
     queryKey: ['tx-public', slug],
@@ -87,7 +91,9 @@ export default function TxPublicScreen() {
     );
   }
 
-  const sellerName = tx.sellerName ?? tx.initiator?.fullName ?? '—';
+  const sellerName = tx.initiatorRole === 'seller'
+    ? (tx.initiatorName ?? tx.sellerName ?? tx.initiator?.fullName ?? '—')
+    : '—';
   const totalToBuyer = computeBuyerTotal(tx);
   const txTitle = tx.title ?? tx.description;
 
@@ -216,17 +222,25 @@ export default function TxPublicScreen() {
       </ScrollView>
 
       {/* Bottom fixed bar */}
-      <View style={styles.bottomBar}>
+      <View style={[styles.bottomBar, { paddingBottom: Math.max(Spacing.xl, insets.bottom + Spacing.md) }]}>
+        <Pressable style={styles.checkRow} onPress={() => setAccepted((v) => !v)}>
+          <Feather
+            name={accepted ? 'check-square' : 'square'}
+            size={20}
+            color={accepted ? Colors.primary : Colors.textMuted}
+          />
+          <Text style={styles.checkLabel}>
+            Acepto los términos de SafePay y la política de retención
+          </Text>
+        </Pressable>
         <ActionButton
-          label="Continuar"
+          label="Confirmar transacción"
           fullWidth
           loading={accepting}
+          disabled={!accepted}
           onPress={handlePay}
           rightIcon={<Feather name="arrow-right" size={16} color={Colors.textOnPrimary} />}
         />
-        <Text style={styles.disclaimer}>
-          Al pagar aceptás los términos de SafePay y la política de retención.
-        </Text>
       </View>
     </ScreenContainer>
   );
@@ -407,17 +421,21 @@ const styles = StyleSheet.create({
     bottom: 0, left: 0, right: 0,
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
-    paddingBottom: Spacing.xl,
     backgroundColor: Colors.background,
     borderTopWidth: 1,
     borderTopColor: Colors.divider,
-    gap: Spacing.xs,
+    gap: Spacing.sm,
   },
-  disclaimer: {
+  checkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  checkLabel: {
     ...Typography.caption,
-    fontSize: 10,
-    color: Colors.textMuted,
-    textAlign: 'center',
-    lineHeight: 15,
+    fontSize: 12,
+    color: Colors.textSecondary,
+    flex: 1,
+    lineHeight: 17,
   },
 });
