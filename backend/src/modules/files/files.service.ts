@@ -15,6 +15,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { TransactionFile } from '../../database/entities/transaction-file.entity';
 import { Transaction } from '../../database/entities/transaction.entity';
 import { UploadFileDto } from './dto/upload-file.dto';
+import { FileType } from '../../common/enums';
 
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_SIZE_BYTES = 5 * 1024 * 1024;
@@ -47,13 +48,15 @@ export class FilesService {
   async listByTransaction(
     transactionId: string,
     userId: string,
+    type?: FileType,
   ): Promise<{ id: string; s3Key: string; mimeType: string; sizeBytes: number }[]> {
     const tx = await this.txRepo.findOne({ where: { id: transactionId } });
     if (!tx) throw new NotFoundException('Transacción no encontrada');
     if (tx.initiatorId !== userId && tx.counterpartId !== userId) {
       throw new ForbiddenException('No pertenecés a esta transacción');
     }
-    const files = await this.fileRepo.find({ where: { transactionId } });
+    const where = type ? { transactionId, type } : { transactionId };
+    const files = await this.fileRepo.find({ where });
     return files.map((f) => ({
       id: f.id,
       s3Key: f.s3Key,

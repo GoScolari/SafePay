@@ -12,6 +12,7 @@
 
 import React, { useCallback, useState } from 'react';
 import {
+  Alert,
   Image,
   Pressable,
   RefreshControl,
@@ -34,6 +35,7 @@ import { useToast } from '@/components/chrome/Toast';
 
 import { useTransaction } from '@/hooks/useTransaction';
 import { useFiles, type UploadedFile } from '@/hooks/useFiles';
+import { PhotoViewer } from '@/components/PhotoViewer';
 import { useAuthStore } from '@/stores/auth.store';
 
 import { Colors } from '@/constants/colors';
@@ -153,7 +155,19 @@ export default function TxDetailScreen() {
             action={nextAction}
             onShare={handleShare}
             onAccept={() => accept()}
-            onCancel={() => cancel()}
+            onCancel={() => {
+              const isPagado = tx.status === 'PAGADO';
+              Alert.alert(
+                isPagado ? 'Cancelar transacción' : 'Cancelar propuesta',
+                isPagado
+                  ? 'El pago será reembolsado al comprador. Esta acción no se puede deshacer.'
+                  : '¿Seguro que querés cancelar esta propuesta?',
+                [
+                  { text: 'Volver', style: 'cancel' },
+                  { text: 'Cancelar', style: 'destructive', onPress: () => cancel() },
+                ],
+              );
+            }}
             onRelease={() => releasePayment(tx.payment?.id ?? id)}
             onDeliver={() => deliver()}
             onDevDeliver={() => devDeliver()}
@@ -167,9 +181,26 @@ export default function TxDetailScreen() {
           />
         )}
 
-        {/* Fotos — solo ENTREGADO + comprador */}
-        {tx.status === 'ENTREGADO' && !isSeller && (
-          <PhotoStrip txId={tx.id} router={router} />
+        {/* Fotos del producto — siempre visibles mientras no terminal */}
+        {!isTerminal(tx.status) && (
+          <PhotoStrip
+            txId={tx.id}
+            router={router}
+            fileType="publication"
+            canEdit={isSeller}
+            label="FOTOS DEL PRODUCTO"
+          />
+        )}
+
+        {/* Fotos de evidencia — solo en ENTREGADO */}
+        {tx.status === 'ENTREGADO' && (
+          <PhotoStrip
+            txId={tx.id}
+            router={router}
+            fileType="reception"
+            canEdit={!isSeller}
+            label={isSeller ? 'EVIDENCIA DEL COMPRADOR' : 'SUBÍ EVIDENCIA DE RECEPCIÓN'}
+          />
         )}
 
         {/* Stepper */}
@@ -474,38 +505,82 @@ function NextActionCard({
 
 // ─── PhotoStrip ─────────────────────────────────────────────────────────────
 
-function PhotoStrip({ txId, router }: { txId: string; router: ReturnType<typeof useRouter> }) {
-  const { files, getFileUrl } = useFiles(txId);
-  const [urls, setUrls] = useState<Record<string, string>>({});
+function PhotoStrip({
+  txId,
+  router,
+  fileType,
+  canEdit,
+  label,
+}: {
+  txId: string;
+  router: ReturnType<typeof useRouter>;
+  fileType: 'publication' | 'reception';
+  canEdit: boolean;
+  label: string;
+}) {
+  const { files, deleteFile } = useFiles(txId, fileType);
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [viewerIndex, setViewerIndex]     = useState(0);
 
-  React.useEffect(() => {
-    files.forEach((f) => {
-      if (!urls[f.id]) {
-        getFileUrl(f.id).then((url) => setUrls((prev) => ({ ...prev, [f.id]: url })));
-      }
-    });
-  }, [files]);
-
-  const goToPhotos = () => router.push(`/(app)/transactions/photos?txId=${txId}` as never);
+  const uris = files.map((f) => f.localUri ?? '').filter(Boolean);
   const visible = files.slice(0, 4);
+
+  if (!canEdit && files.length === 0) return null;
+
+  const goToPhotos = () =>
+    router.push(
+      `/(app)/transactions/photos?txId=${txId}&fileType=${fileType}${!canEdit ? '&readOnly=true' : ''}` as never,
+    );
+
+  const openViewer = (index: number) => {
+    setViewerIndex(index);
+    setViewerVisible(true);
+  };
+
+  const handleDelete = (index: number) => {
+    const file = files[index];
+    if (!file) return;
+    setViewerVisible(false);
+    deleteFile(file.id);
+  };
 
   return (
     <>
-      <Text style={styles.sectionLabel}>FOTOS RECIBIDAS · SUBÍ EVIDENCIA</Text>
+      <Text style={styles.sectionLabel}>{label}</Text>
       <View style={styles.photoRow}>
-        {visible.map((f) => (
-          <Pressable key={f.id} style={styles.photoThumb} onPress={goToPhotos}>
-            {urls[f.id] ? (
-              <Image source={{ uri: urls[f.id] }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+        {visible.map((f, index) => (
+          <Pressable
+            key={f.id}
+            style={styles.photoThumb}
+            onPress={() => f.localUri ? openViewer(index) : undefined}
+          >
+            {f.localUri ? (
+              <Image source={{ uri: f.localUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
             ) : (
               <Feather name="image" size={20} color={Colors.textMuted} />
             )}
           </Pressable>
         ))}
-        <Pressable style={[styles.photoThumb, styles.photoAdd]} onPress={goToPhotos}>
-          <Feather name="plus" size={20} color={Colors.textMuted} />
-        </Pressable>
+        {canEdit && (
+          <Pressable style={[styles.photoThumb, styles.photoAdd]} onPress={goToPhotos}>
+            <Feather name="plus" size={20} color={Colors.textMuted} />
+          </Pressable>
+        )}
+        {!canEdit && files.length > 4 && (
+          <Pressable style={[styles.photoThumb, styles.photoAdd]} onPress={goToPhotos}>
+            <Text style={styles.photoMoreText}>+{files.length - 4}</Text>
+          </Pressable>
+        )}
       </View>
+
+      <PhotoViewer
+        uris={uris}
+        initialIndex={viewerIndex}
+        visible={viewerVisible}
+        onClose={() => setViewerVisible(false)}
+        canDelete={canEdit}
+        onDelete={handleDelete}
+      />
     </>
   );
 }
@@ -749,5 +824,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     borderStyle: 'dashed',
     borderColor: 'rgba(255,255,255,0.20)',
+  },
+  photoMoreText: {
+    color: Colors.textMuted,
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

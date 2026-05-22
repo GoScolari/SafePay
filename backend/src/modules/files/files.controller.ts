@@ -59,9 +59,10 @@ export class FilesController {
   @Get()
   list(
     @Query('transactionId') transactionId: string,
+    @Query('type') type: string | undefined,
     @CurrentUser() user: { id: string },
   ) {
-    return this.filesService.listByTransaction(transactionId, user.id);
+    return this.filesService.listByTransaction(transactionId, user.id, type as any);
   }
 
   @Get(':id/url')

@@ -2,21 +2,32 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan, IsNull } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { HttpService } from '@nestjs/axios';
+import { ConfigService } from '@nestjs/config';
+import { firstValueFrom } from 'rxjs';
 import * as crypto from 'crypto';
 import { Transaction } from '../../database/entities/transaction.entity';
-import { TxModality, TxRole, TxStatus } from '../../common/enums';
+import { Payment } from '../../database/entities/payment.entity';
+import { TxModality, TxRole, TxStatus, PaymentStatus } from '../../common/enums';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 
 @Injectable()
 export class TransactionsService {
+  private readonly logger = new Logger(TransactionsService.name);
+
   constructor(
     @InjectRepository(Transaction)
     private readonly txRepo: Repository<Transaction>,
+    @InjectRepository(Payment)
+    private readonly paymentRepo: Repository<Payment>,
+    private readonly http: HttpService,
+    private readonly config: ConfigService,
   ) {}
 
   async create(dto: CreateTransactionDto, userId: string): Promise<Transaction> {
@@ -147,8 +158,30 @@ export class TransactionsService {
     if (tx.initiatorId !== userId && tx.counterpartId !== userId) {
       throw new ForbiddenException('No tenés permiso para cancelar esta transacción');
     }
-    if (tx.status !== TxStatus.PAGADO) {
-      throw new BadRequestException('Solo se puede cancelar una transacción en estado PAGADO');
+    if (tx.status !== TxStatus.PROPUESTA && tx.status !== TxStatus.PAGADO) {
+      throw new BadRequestException('Solo se puede cancelar en estado PROPUESTA o PAGADO');
+    }
+
+    if (tx.status === TxStatus.PAGADO) {
+      const payment = await this.paymentRepo.findOne({
+        where: { transactionId: id, status: PaymentStatus.HELD },
+      });
+      if (payment) {
+        const mpAccessToken = this.config.get<string>('mercadopago.accessToken');
+        if (mpAccessToken && payment.mpPaymentId) {
+          await firstValueFrom(
+            this.http.post(
+              `https://api.mercadopago.com/v1/payments/${payment.mpPaymentId}/refunds`,
+              {},
+              { headers: { Authorization: `Bearer ${mpAccessToken}` } },
+            ),
+          );
+        } else {
+          this.logger.warn('Sin credenciales MP — reembolso solo en DB (modo dev)');
+        }
+        payment.status = PaymentStatus.REFUNDED;
+        await this.paymentRepo.save(payment);
+      }
     }
 
     tx.status = TxStatus.CANCELADO;

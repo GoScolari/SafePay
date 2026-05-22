@@ -1,9 +1,11 @@
 import { useEffect } from 'react';
+import { Platform } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import * as NavigationBar from 'expo-navigation-bar';
 import { queryClient } from '@/lib/queryClient';
 import { Colors } from '@/constants/colors';
 import { useAuthStore } from '@/stores/auth.store';
@@ -16,6 +18,13 @@ export default function RootLayout() {
   useEffect(() => {
     if (accessToken) setAccessToken(accessToken);
   }, [accessToken]);
+
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      NavigationBar.setBackgroundColorAsync(Colors.background);
+      NavigationBar.setButtonStyleAsync('light');
+    }
+  }, []);
 
   return (
     <SafeAreaProvider>

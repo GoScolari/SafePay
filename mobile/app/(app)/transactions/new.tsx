@@ -4,7 +4,7 @@ import {
   StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { router } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { FeePreview } from '@/components/FeePreview';
@@ -27,6 +27,7 @@ interface FormState {
 const STEPS = ['Rol y modalidad', 'Monto y descripción', 'Comisión'];
 
 export default function NewTransactionScreen() {
+  const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const [step, setStep]   = useState(0);
   const [form, setForm]   = useState<FormState>({
@@ -230,7 +231,7 @@ export default function NewTransactionScreen() {
       </KeyboardAvoidingView>
 
       {/* Footer */}
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: Math.max(16, insets.bottom + 8) }]}>
         {step < 2 ? (
           <TouchableOpacity style={styles.primaryBtn} onPress={next}>
             <Text style={styles.primaryBtnText}>Siguiente →</Text>

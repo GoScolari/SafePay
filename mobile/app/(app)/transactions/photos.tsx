@@ -3,135 +3,217 @@ import {
   Image, ActivityIndicator, Alert,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { useEffect, useRef, useState } from 'react';
-import { useFiles } from '@/hooks/useFiles';
+import { useRef, useState } from 'react';
+import { useFiles, type FileType } from '@/hooks/useFiles';
+import { PhotoViewer } from '@/components/PhotoViewer';
 import { Colors } from '@/constants/colors';
 
 export default function PhotosScreen() {
-  const { txId, fromCreate } = useLocalSearchParams<{ txId: string; fromCreate?: string }>();
+  const { txId, fromCreate, fileType: fileTypeParam, readOnly: readOnlyParam } =
+    useLocalSearchParams<{
+      txId: string;
+      fromCreate?: string;
+      fileType?: string;
+      readOnly?: string;
+    }>();
+
+  const fileType: FileType = (fileTypeParam === 'reception' ? 'reception' : 'publication');
   const isFromCreate = fromCreate === 'true';
-  const { files, isLoading, uploading, deleting, uploadFile, getFileUrl, deleteFile } = useFiles(txId ?? '');
-  const [urls, setUrls] = useState<Record<string, string>>({});
-  const localUris = useRef<Record<string, string>>({});
+  const isReadOnly   = readOnlyParam === 'true';
 
-  useEffect(() => {
-    files.forEach((f) => {
-      if (!urls[f.id] && !localUris.current[f.id]) {
-        getFileUrl(f.id).then((url) => {
-          if (url) setUrls((prev) => ({ ...prev, [f.id]: url }));
-        });
-      }
-    });
-  }, [files]);
+  const insets = useSafeAreaInsets();
+  const pickingRef = useRef(false);
+  const { files, isLoading, uploading, deleting, uploadFile, deleteFile } = useFiles(txId ?? '', fileType);
 
-  const pickImage = async (source: 'gallery' | 'camera') => {
-    let result: ImagePicker.ImagePickerResult;
-    if (source === 'camera') {
-      const perm = await ImagePicker.requestCameraPermissionsAsync();
-      if (!perm.granted) { Alert.alert('Permiso requerido', 'Necesitamos acceso a la cámara.'); return; }
-      result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
-    } else {
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) { Alert.alert('Permiso requerido', 'Necesitamos acceso a la galería.'); return; }
-      result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
-    }
-    if (result.canceled || !result.assets[0]) return;
-    const asset = result.assets[0];
-    try {
-      const uploaded = await uploadFile(asset.uri, asset.mimeType ?? 'image/jpeg');
-      localUris.current[uploaded.id] = asset.uri;
-    } catch {
-      Alert.alert('Error', 'No se pudo subir la foto. Intentá de nuevo.');
-    }
+  const [viewerVisible, setViewerVisible]   = useState(false);
+  const [viewerIndex, setViewerIndex]       = useState(0);
+
+  const openViewer = (index: number) => {
+    setViewerIndex(index);
+    setViewerVisible(true);
   };
 
-  const confirmDelete = (fileId: string) => {
+  const uris = files.map((f) => f.localUri ?? '').filter(Boolean);
+
+  const handleDelete = (index: number) => {
+    const file = files[index];
+    if (!file) return;
     Alert.alert('Eliminar foto', '¿Seguro que querés eliminar esta foto?', [
       { text: 'Cancelar', style: 'cancel' },
-      { text: 'Eliminar', style: 'destructive', onPress: () => deleteFile(fileId) },
+      {
+        text: 'Eliminar', style: 'destructive',
+        onPress: () => {
+          setViewerVisible(false);
+          deleteFile(file.id);
+        },
+      },
     ]);
+  };
+
+  const pickImage = async (source: 'gallery' | 'camera') => {
+    if (pickingRef.current) return;
+    pickingRef.current = true;
+
+    try {
+      let result: ImagePicker.ImagePickerResult;
+      if (source === 'camera') {
+        const perm = await ImagePicker.requestCameraPermissionsAsync();
+        if (!perm.granted) {
+          Alert.alert('Permiso requerido', 'Necesitamos acceso a la cámara.');
+          return;
+        }
+        result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
+      } else {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!perm.granted) {
+          Alert.alert('Permiso requerido', 'Necesitamos acceso a la galería.');
+          return;
+        }
+        result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
+      }
+
+      if (result.canceled || !result.assets[0]) return;
+      const asset = result.assets[0];
+
+      try {
+        await uploadFile(asset.uri, asset.mimeType ?? 'image/jpeg');
+      } catch (e: any) {
+        const msg = e?.message ?? 'Error desconocido';
+        Alert.alert('Error', `No se pudo subir la foto: ${msg}`);
+      }
+    } finally {
+      pickingRef.current = false;
+    }
   };
 
   const showSourcePicker = () => {
     Alert.alert('Agregar foto', 'Elegí el origen', [
-      { text: 'Cámara',  onPress: () => pickImage('camera') },
-      { text: 'Galería', onPress: () => pickImage('gallery') },
+      { text: 'Cámara',   onPress: () => pickImage('camera') },
+      { text: 'Galería',  onPress: () => pickImage('gallery') },
       { text: 'Cancelar', style: 'cancel' },
     ]);
   };
 
+  const title = fileType === 'reception' ? 'Fotos de evidencia' : 'Fotos del producto';
+  const backLabel = isFromCreate ? 'Omitir' : '←';
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
-          onPress={() => isFromCreate
-            ? router.replace(`/(app)/transactions/${txId}` as never)
-            : router.back()
+          onPress={() =>
+            isFromCreate
+              ? router.replace(`/(app)/transactions/${txId}` as never)
+              : router.back()
           }
           style={styles.backBtn}
         >
-          <Text style={styles.backText}>{isFromCreate ? 'Omitir' : '←'}</Text>
+          <Text style={styles.backText}>{backLabel}</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>
-          {isFromCreate ? 'Fotos del producto' : 'Fotos de evidencia'}
-        </Text>
-        <TouchableOpacity onPress={showSourcePicker} disabled={uploading} style={styles.addBtn}>
-          {uploading
-            ? <ActivityIndicator color={Colors.primary} size="small" />
-            : <Text style={styles.addText}>+ Foto</Text>
-          }
-        </TouchableOpacity>
+
+        <Text style={styles.headerTitle}>{title}</Text>
+
+        {!isReadOnly && (
+          <TouchableOpacity onPress={showSourcePicker} disabled={uploading} style={styles.addBtn}>
+            {uploading
+              ? <ActivityIndicator color={Colors.primary} size="small" />
+              : <Text style={styles.addText}>+ Foto</Text>
+            }
+          </TouchableOpacity>
+        )}
+        {isReadOnly && <View style={styles.addBtn} />}
       </View>
 
+      {/* Grid */}
       <ScrollView contentContainerStyle={styles.grid}>
         {isLoading && (
           <View style={styles.empty}>
             <ActivityIndicator color={Colors.primary} />
           </View>
         )}
-        {!isLoading && files.length === 0 && (
+
+        {!isLoading && files.length === 0 && !isReadOnly && (
           <View style={styles.empty}>
             <Text style={styles.emptyEmoji}>📷</Text>
             <Text style={styles.emptyText}>Sin fotos aún</Text>
-            <Text style={styles.emptySub}>Agregá fotos como evidencia del estado del artículo.</Text>
+            <Text style={styles.emptySub}>
+              {fileType === 'reception'
+                ? 'Subí fotos como evidencia del estado del artículo recibido.'
+                : 'Agregá fotos del producto para que el comprador sepa qué está comprando.'}
+            </Text>
             <TouchableOpacity style={styles.emptyBtn} onPress={showSourcePicker} disabled={uploading}>
               <Text style={styles.emptyBtnText}>Agregar primera foto</Text>
             </TouchableOpacity>
           </View>
         )}
-        {files.map((f) => (
-          <View key={f.id} style={styles.thumb}>
-            {(urls[f.id] || localUris.current[f.id])
-              ? <Image source={{ uri: urls[f.id] || localUris.current[f.id] }} style={styles.image} resizeMode="cover" />
-              : <View style={styles.imagePlaceholder}><ActivityIndicator color={Colors.primary} /></View>
-            }
-            <TouchableOpacity
-              style={styles.deleteBtn}
-              onPress={() => confirmDelete(f.id)}
-              disabled={deleting === f.id}
-            >
-              {deleting === f.id
-                ? <ActivityIndicator color="#fff" size="small" />
-                : <Text style={styles.deleteText}>✖</Text>
-              }
-            </TouchableOpacity>
+
+        {!isLoading && files.length === 0 && isReadOnly && (
+          <View style={styles.empty}>
+            <Text style={styles.emptyEmoji}>📷</Text>
+            <Text style={styles.emptyText}>Sin fotos</Text>
+            <Text style={styles.emptySub}>El vendedor no subió fotos del producto.</Text>
           </View>
+        )}
+
+        {files.map((f, index) => (
+          <TouchableOpacity
+            key={f.id}
+            style={styles.thumb}
+            onPress={() => openViewer(index)}
+            activeOpacity={0.85}
+          >
+            {f.localUri ? (
+              <Image source={{ uri: f.localUri }} style={styles.image} resizeMode="cover" />
+            ) : (
+              <View style={styles.imagePlaceholder}>
+                <ActivityIndicator color={Colors.primary} />
+              </View>
+            )}
+            {!isReadOnly && (
+              <TouchableOpacity
+                style={styles.deleteBtn}
+                onPress={() => handleDelete(index)}
+                disabled={deleting === f.id}
+                hitSlop={8}
+              >
+                {deleting === f.id
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={styles.deleteText}>✖</Text>
+                }
+              </TouchableOpacity>
+            )}
+          </TouchableOpacity>
         ))}
       </ScrollView>
+
+      {/* Footer Listo (solo fromCreate) */}
       {isFromCreate && (
-        <View style={styles.footer}>
+        <View style={[styles.footer, { paddingBottom: Math.max(16, insets.bottom + 8) }]}>
           <TouchableOpacity
             style={styles.doneBtn}
             onPress={() => router.replace(`/(app)/transactions/${txId}` as never)}
           >
             <Text style={styles.doneBtnText}>
-              {files.length > 0 ? `Listo · ${files.length} foto${files.length !== 1 ? 's' : ''}` : 'Ir a la transacción'}
+              {files.length > 0
+                ? `Listo · ${files.length} foto${files.length !== 1 ? 's' : ''}`
+                : 'Ir a la transacción'}
             </Text>
           </TouchableOpacity>
         </View>
       )}
+
+      {/* Visor fullscreen */}
+      <PhotoViewer
+        uris={uris}
+        initialIndex={viewerIndex}
+        visible={viewerVisible}
+        onClose={() => setViewerVisible(false)}
+        canDelete={!isReadOnly}
+        onDelete={handleDelete}
+      />
     </SafeAreaView>
   );
 }
@@ -141,7 +223,7 @@ const THUMB = 160;
 const styles = StyleSheet.create({
   container:        { flex: 1, backgroundColor: Colors.background },
   header:           { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: Colors.border, backgroundColor: Colors.surface },
-  backBtn:          { minWidth: 32 },
+  backBtn:          { minWidth: 48 },
   backText:         { fontSize: 22, color: Colors.primary },
   headerTitle:      { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '700', color: Colors.textPrimary },
   addBtn:           { minWidth: 56, alignItems: 'flex-end' },
